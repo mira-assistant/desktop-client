@@ -1,4 +1,30 @@
 // Mira Desktop Renderer Process
+//
+// Troubleshooting Guide:
+// =====================
+// 
+// 1. If button is laggy or unresponsive:
+//    - Check browser console for errors
+//    - Try Ctrl+Shift+M to toggle debug mode for detailed logging
+//    - Use Ctrl+Shift+T to test backend connection
+//
+// 2. If no audio is being sent to backend:
+//    - Check that microphone permission is granted
+//    - Use Ctrl+Shift+D to show audio processing statistics
+//    - Look for "Sending X bytes of VAD-detected speech to backend" in console
+//    - Verify VAD library loaded successfully (should see "VAD library loaded" message)
+//
+// 3. If VAD library fails to load:
+//    - Check internet connection (loads from CDN)
+//    - Check browser console for "Failed to load VAD library" errors
+//    - The app will try both CDN and local npm package as fallback
+//
+// 4. Debug commands in browser console:
+//    - window.miraApp.showAudioStats() - Show audio processing statistics
+//    - window.miraApp.testBackendConnection() - Test backend connectivity
+//    - window.miraApp.debugMode = true - Enable detailed logging
+//    - window.miraApp.audioProcessingStats - View raw audio stats
+//
 class MiraDesktop {
     constructor() {
         this.baseUrl = 'http://localhost:8000';
@@ -16,11 +42,31 @@ class MiraDesktop {
         // Audio capture properties - VAD-based
         this.micVAD = null; // Voice Activity Detection instance
         this.isRecording = false;
-        this.isProcessingAudio = false; // Prevent overlapping audio processing
+        this.audioProcessingStats = {
+            totalAudioSent: 0,
+            totalAudioBytes: 0,
+            successfulRequests: 0,
+            failedRequests: 0,
+            averageAudioDuration: 0
+        };
+        
+        // Debug mode (can be enabled via console: window.miraApp.debugMode = true)
+        this.debugMode = false;
 
         this.initializeElements();
         this.setupEventListeners();
         this.startConnectionCheck();
+        
+        console.log('Mira Desktop initialized - debug info:');
+        console.log('- Base URL:', this.baseUrl);
+        console.log('- Client ID:', this.clientId);
+        console.log('- Audio stats available at: window.miraApp.audioProcessingStats');
+        console.log('- Enable debug mode: window.miraApp.debugMode = true');
+        console.log('- Keyboard shortcuts:');
+        console.log('  * Space: Toggle listening');
+        console.log('  * Ctrl+Shift+D: Show audio stats');
+        console.log('  * Ctrl+Shift+M: Toggle debug mode');
+        console.log('  * Ctrl+Shift+T: Test backend connection');
     }
 
     initializeElements() {
@@ -417,6 +463,15 @@ class MiraDesktop {
 
         this.isProcessingAudio = true;
         console.log(`sendVADAudioToBackend: Processing ${audioFloat32Array.length} audio samples`);
+        
+        if (this.debugMode) {
+            console.log('DEBUG: Audio sample stats:');
+            console.log('- Sample rate: 16000 Hz');
+            console.log('- Duration:', (audioFloat32Array.length / 16000).toFixed(3), 'seconds');
+            console.log('- Min sample:', Math.min(...audioFloat32Array).toFixed(4));
+            console.log('- Max sample:', Math.max(...audioFloat32Array).toFixed(4));
+            console.log('- RMS:', Math.sqrt(audioFloat32Array.reduce((sum, x) => sum + x*x, 0) / audioFloat32Array.length).toFixed(4));
+        }
 
         try {
             // Validate audio data
@@ -478,10 +533,20 @@ class MiraDesktop {
             clearTimeout(timeoutId);
 
             if (response.ok) {
+                this.audioProcessingStats.successfulRequests++;
+                this.audioProcessingStats.totalAudioSent++;
+                this.audioProcessingStats.totalAudioBytes += audioBytes.length;
+                this.audioProcessingStats.averageAudioDuration = 
+                    ((this.audioProcessingStats.averageAudioDuration * (this.audioProcessingStats.totalAudioSent - 1)) + 
+                     (audioFloat32Array.length / 16000)) / this.audioProcessingStats.totalAudioSent;
+                
                 try {
                     const result = await response.json();
                     if (result.message !== "Duplicate transcription skipped") {
                         console.log('VAD audio processed successfully:', result);
+                        if (this.debugMode) {
+                            console.log('DEBUG: Backend response:', result);
+                        }
                     } else {
                         console.log('Duplicate transcription was skipped');
                     }
@@ -491,6 +556,7 @@ class MiraDesktop {
                 }
                 // The transcription polling will pick up any new interactions
             } else {
+                this.audioProcessingStats.failedRequests++;
                 let errorText = 'Unknown error';
                 try {
                     errorText = await response.text();
@@ -958,6 +1024,81 @@ class MiraDesktop {
             this.checkConnection();
         }, 5000);
     }
+    
+    // Debug method to show audio processing statistics
+    showAudioStats() {
+        const stats = this.audioProcessingStats;
+        console.log('📊 Audio Processing Statistics:');
+        console.log(`- Total audio segments sent: ${stats.totalAudioSent}`);
+        console.log(`- Total bytes sent: ${stats.totalAudioBytes.toLocaleString()}`);
+        console.log(`- Successful requests: ${stats.successfulRequests}`);
+        console.log(`- Failed requests: ${stats.failedRequests}`);
+        console.log(`- Success rate: ${stats.totalAudioSent > 0 ? ((stats.successfulRequests / (stats.successfulRequests + stats.failedRequests)) * 100).toFixed(1) : 0}%`);
+        console.log(`- Average audio duration: ${stats.averageAudioDuration.toFixed(2)}s`);
+        console.log(`- VAD status: ${this.isRecording ? 'Recording' : 'Stopped'}`);
+        console.log(`- Backend connection: ${this.isConnected ? 'Connected' : 'Disconnected'}`);
+        
+        // Show in UI as well
+        this.showMessage(`Audio Stats: ${stats.totalAudioSent} segments sent, ${stats.successfulRequests} successful, ${stats.failedRequests} failed`, 'info');
+        
+        return stats;
+    }
+    
+    // Test backend connectivity with detailed reporting
+    async testBackendConnection() {
+        console.log('🔗 Testing backend connection...');
+        
+        try {
+            // Test basic connection
+            const startTime = Date.now();
+            const response = await fetch(`${this.baseUrl}/`, {
+                method: 'GET',
+                cache: 'no-cache'
+            });
+            const responseTime = Date.now() - startTime;
+            
+            console.log(`- Response time: ${responseTime}ms`);
+            console.log(`- Status: ${response.status} ${response.statusText}`);
+            
+            if (response.ok) {
+                const data = await response.json();
+                console.log('- Backend response:', data);
+                
+                // Test the register_interaction endpoint with dummy data
+                console.log('🎵 Testing audio endpoint...');
+                const dummyAudio = new Uint8Array(1600); // 0.1s of silence at 16kHz
+                
+                const audioTestStart = Date.now();
+                const audioResponse = await fetch(`${this.baseUrl}/register_interaction`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/octet-stream'
+                    },
+                    body: dummyAudio
+                });
+                const audioResponseTime = Date.now() - audioTestStart;
+                
+                console.log(`- Audio endpoint response time: ${audioResponseTime}ms`);
+                console.log(`- Audio endpoint status: ${audioResponse.status} ${audioResponse.statusText}`);
+                
+                if (audioResponse.ok) {
+                    const audioResult = await audioResponse.json();
+                    console.log('- Audio endpoint response:', audioResult);
+                    this.showMessage('Backend connection test successful!', 'info');
+                } else {
+                    const errorText = await audioResponse.text();
+                    console.log('- Audio endpoint error:', errorText);
+                    this.showMessage('Backend connection OK, but audio endpoint has issues', 'warning');
+                }
+            } else {
+                this.showMessage('Backend connection failed', 'error');
+            }
+            
+        } catch (error) {
+            console.error('Backend connection test failed:', error);
+            this.showMessage('Backend connection test failed: ' + error.message, 'error');
+        }
+    }
 
     // Cleanup method for when the app is closing
     async cleanup() {
@@ -1028,6 +1169,31 @@ document.addEventListener('keydown', (e) => {
         e.preventDefault();
         if (window.miraApp && window.miraApp.isConnected) {
             window.miraApp.toggleListening();
+        }
+    }
+    
+    // Debug shortcuts (Ctrl+Shift+D for debug stats, Ctrl+Shift+M for debug mode toggle)
+    if (e.ctrlKey && e.shiftKey && e.code === 'KeyD') {
+        e.preventDefault();
+        if (window.miraApp) {
+            window.miraApp.showAudioStats();
+        }
+    }
+    
+    if (e.ctrlKey && e.shiftKey && e.code === 'KeyM') {
+        e.preventDefault();
+        if (window.miraApp) {
+            window.miraApp.debugMode = !window.miraApp.debugMode;
+            console.log('Debug mode:', window.miraApp.debugMode ? 'ENABLED' : 'DISABLED');
+            window.miraApp.showMessage(`Debug mode ${window.miraApp.debugMode ? 'enabled' : 'disabled'}`, 'info');
+        }
+    }
+    
+    // Backend connection test (Ctrl+Shift+T)
+    if (e.ctrlKey && e.shiftKey && e.code === 'KeyT') {
+        e.preventDefault();
+        if (window.miraApp) {
+            window.miraApp.testBackendConnection();
         }
     }
 });
