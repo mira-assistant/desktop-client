@@ -3,6 +3,7 @@
   "version": "2.3.9",
   "description": "Mira Desktop - Cross-platform voice transcription application",
   "main": "main.js",
+  "type": "commonjs",
   "scripts": {
     "start": "node start-script.js",
     "start-dev": "NODE_ENV=development node start-script.js",
@@ -49,5 +50,8 @@
     "win": {
       "target": "nsis"
     }
+  },
+  "dependencies": {
+    "@ricky0123/vad-web": "^0.0.24"
   }
 }

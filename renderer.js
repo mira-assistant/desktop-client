@@ -13,14 +13,10 @@ class MiraDesktop {
         this.connectionCheckInterval = null;
         this.hasShownStartupDemo = false; // Track if startup demo transcriptions have been shown
 
-        // Audio capture properties
-        this.mediaStream = null;
-        this.audioContext = null;
-        this.audioProcessor = null;
-        this.audioChunks = [];
+        // Audio capture properties - VAD-based
+        this.micVAD = null; // Voice Activity Detection instance
         this.isRecording = false;
-        this.lastAudioSent = 0; // Timestamp of last audio send
-        this.audioSendThrottle = 500; // Throttle for audio sending
+        this.isProcessingAudio = false; // Prevent overlapping audio processing
 
         this.initializeElements();
         this.setupEventListeners();
@@ -238,63 +234,81 @@ class MiraDesktop {
         try {
             console.log('Requesting microphone access...');
 
-            // Request microphone access
-            this.mediaStream = await navigator.mediaDevices.getUserMedia({
-                audio: {
-                    sampleRate: 16000,
-                    channelCount: 1,
+            // Use VAD library loaded via script tags
+            if (typeof vad === 'undefined' || !vad.MicVAD) {
+                throw new Error('VAD library not loaded. Please check your internet connection.');
+            }
+            
+            const { MicVAD } = vad;
+
+            console.log('Microphone access granted, setting up VAD-based audio processing...');
+
+            // Initialize VAD with custom options for 0.6s silence detection
+            const sampleRate = 16000;
+            const frameSamples = 1536; // Default frame size
+            // Calculate redemption frames for ~0.6s silence detection
+            const targetSilenceMs = 600; // 0.6 seconds like terminal-client
+            const redemptionFrames = Math.round((targetSilenceMs * sampleRate) / (frameSamples * 1000));
+            
+            console.log(`Setting up VAD with ${redemptionFrames} redemption frames for ${targetSilenceMs}ms silence detection`);
+
+            this.micVAD = await MicVAD.new({
+                // VAD model options
+                model: 'legacy', // Use legacy model for better compatibility
+                
+                // Speech detection thresholds
+                positiveSpeechThreshold: 0.5,
+                negativeSpeechThreshold: 0.35,
+                
+                // Silence detection - customized for 0.6s like terminal-client
+                redemptionFrames: redemptionFrames,
+                
+                // Audio quality settings
+                frameSamples: frameSamples,
+                preSpeechPadFrames: 2, // Include some pre-speech audio
+                minSpeechFrames: 5, // Minimum speech duration to avoid false positives
+                
+                // Enhanced audio constraints for better quality
+                additionalAudioConstraints: {
+                    sampleRate: sampleRate,
                     echoCancellation: true,
                     noiseSuppression: true,
                     autoGainControl: true
+                },
+                
+                // Callbacks for VAD events
+                onSpeechStart: () => {
+                    console.log('VAD: Speech started');
+                    this.updateVADStatus('speaking');
+                },
+                
+                onSpeechEnd: (audio) => {
+                    const durationSeconds = audio.length / sampleRate;
+                    console.log(`VAD: Speech ended, processing ${durationSeconds.toFixed(2)}s of audio`);
+                    this.updateVADStatus('processing');
+                    this.sendVADAudioToBackend(audio);
+                },
+                
+                onVADMisfire: () => {
+                    console.log('VAD: Speech detected but too short (misfire)');
+                    this.updateVADStatus('waiting');
+                },
+                
+                onFrameProcessed: (probabilities, frame) => {
+                    // Optional: Could show real-time speech probability
+                    // console.log('VAD probability:', probabilities.isSpeech.toFixed(3));
                 }
             });
 
-            console.log('Microphone access granted, setting up audio processing...');
-
-            // Create audio context
-            this.audioContext = new AudioContext({ sampleRate: 16000 });
-            const source = this.audioContext.createMediaStreamSource(this.mediaStream);
-
-            // Create a script processor for audio data - using 4096 buffer for stable capture
-            this.audioProcessor = this.audioContext.createScriptProcessor(4096, 1, 1);
-
-            this.audioChunks = [];
+            // Start VAD listening
+            this.micVAD.start();
             this.isRecording = true;
+            this.updateVADStatus('waiting');
 
-            // Simple time-based audio processing without complex VAD
-            this.audioProcessor.onaudioprocess = (event) => {
-                if (this.isRecording) {
-                    const inputData = event.inputBuffer.getChannelData(0);
-
-                    // Convert to 16-bit PCM
-                    const pcmData = new Int16Array(inputData.length);
-                    for (let i = 0; i < inputData.length; i++) {
-                        pcmData[i] = Math.max(-32768, Math.min(32767, inputData[i] * 32768));
-                    }
-
-                    // Always add to audio chunks
-                    this.audioChunks.push(pcmData);
-
-                    // Check if we have enough audio data to send (about 2 seconds worth)
-                    const totalSamples = this.audioChunks.reduce((sum, chunk) => sum + chunk.length, 0);
-                    const durationSeconds = totalSamples / 16000;
-
-                    // Send audio when we have at least 2 seconds of data
-                    if (durationSeconds >= 2.0) {
-                        console.log(`Sending ${durationSeconds.toFixed(2)}s of audio to backend`);
-                        this.sendAudioToBackend();
-                    }
-                }
-            };
-
-            // Connect the audio pipeline
-            source.connect(this.audioProcessor);
-            this.audioProcessor.connect(this.audioContext.destination);
-
-            console.log('Audio capture started successfully');
+            console.log('VAD-based audio capture started successfully');
         } catch (error) {
-            console.error('Error starting audio capture:', error);
-            this.showMessage('Microphone access denied. Please allow microphone access and try again.');
+            console.error('Error starting VAD audio capture:', error);
+            this.showMessage('Failed to initialize voice activity detection. Please try again.');
             throw error;
         }
     }
@@ -303,66 +317,36 @@ class MiraDesktop {
         try {
             this.isRecording = false;
 
-            // Send any remaining audio data if we have some
-            if (this.audioChunks.length > 0) {
-                await this.sendAudioToBackend();
+            // Clean up VAD resources
+            if (this.micVAD) {
+                this.micVAD.destroy();
+                this.micVAD = null;
             }
 
-            // Clean up audio resources
-            if (this.audioProcessor) {
-                this.audioProcessor.disconnect();
-                this.audioProcessor = null;
-            }
+            // Reset VAD status
+            this.updateVADStatus('stopped');
 
-            if (this.audioContext) {
-                await this.audioContext.close();
-                this.audioContext = null;
-            }
-
-            if (this.mediaStream) {
-                this.mediaStream.getTracks().forEach(track => track.stop());
-                this.mediaStream = null;
-            }
-
-            this.audioChunks = [];
-            console.log('Audio capture stopped');
+            console.log('VAD audio capture stopped');
         } catch (error) {
-            console.error('Error stopping audio capture:', error);
+            console.error('Error stopping VAD audio capture:', error);
         }
     }
 
-    async sendAudioToBackend() {
-        if (this.audioChunks.length === 0 || this.isProcessingAudio) return;
-
-        // Light throttle to prevent overwhelming the backend
-        const now = Date.now();
-        if (now - this.lastAudioSent < this.audioSendThrottle) {
-            return;
-        }
+    async sendVADAudioToBackend(audioFloat32Array) {
+        if (!audioFloat32Array || audioFloat32Array.length === 0 || this.isProcessingAudio) return;
 
         this.isProcessingAudio = true;
-        this.lastAudioSent = now;
-
-        const chunksToProcess = this.audioChunks.length;
-        console.log(`Sending ${chunksToProcess} audio chunks to backend (${now})...`);
 
         try {
-            // Combine all audio chunks into a single buffer
-            const totalLength = this.audioChunks.reduce((sum, chunk) => sum + chunk.length, 0);
-            const combinedBuffer = new Int16Array(totalLength);
-            let offset = 0;
-
-            for (const chunk of this.audioChunks) {
-                combinedBuffer.set(chunk, offset);
-                offset += chunk.length;
+            // Convert Float32Array to 16-bit PCM for backend compatibility
+            const audioInt16 = new Int16Array(audioFloat32Array.length);
+            for (let i = 0; i < audioFloat32Array.length; i++) {
+                audioInt16[i] = Math.max(-32768, Math.min(32767, audioFloat32Array[i] * 32768));
             }
 
             // Convert to bytes for backend
-            const audioBytes = new Uint8Array(combinedBuffer.buffer);
-            console.log(`Sending ${audioBytes.length} bytes of audio data to backend`);
-
-            // Clear processed chunks immediately to prevent reprocessing
-            this.audioChunks = [];
+            const audioBytes = new Uint8Array(audioInt16.buffer);
+            console.log(`Sending ${audioBytes.length} bytes of VAD-detected speech to backend`);
 
             // Send to backend with optimized fetch options
             const response = await fetch(`${this.baseUrl}/register_interaction`, {
@@ -379,21 +363,45 @@ class MiraDesktop {
             if (response.ok) {
                 const result = await response.json();
                 if (result.message !== "Duplicate transcription skipped") {
-                    console.log('Audio processed successfully:', result);
+                    console.log('VAD audio processed successfully:', result);
                 } else {
                     console.log('Duplicate transcription was skipped');
                 }
                 // The transcription polling will pick up any new interactions
             } else {
                 const errorText = await response.text();
-                console.error('Failed to process audio:', response.status, response.statusText, errorText);
+                console.error('Failed to process VAD audio:', response.status, response.statusText, errorText);
             }
 
         } catch (error) {
-            console.error('Error sending audio to backend:', error);
+            console.error('Error sending VAD audio to backend:', error);
         } finally {
             this.isProcessingAudio = false;
+            this.updateVADStatus('waiting');
         }
+    }
+
+    updateVADStatus(status) {
+        // Update UI to show VAD status
+        const statusMessages = {
+            'waiting': 'Waiting for speech...',
+            'speaking': 'Speaking detected...',
+            'processing': 'Processing speech...',
+            'stopped': 'VAD stopped'
+        };
+        
+        // Update microphone status text if listening
+        if (this.isListening && this.micStatusText) {
+            const message = statusMessages[status] || 'Unknown status';
+            // Only update if not showing the main listening message
+            if (status !== 'waiting') {
+                this.micStatusText.textContent = message;
+            } else {
+                this.micStatusText.textContent = 'Listening... Click to stop';
+            }
+        }
+        
+        console.log(`VAD Status: ${statusMessages[status] || status}`);
     }
 
     updateFeatures(features) {
@@ -750,8 +758,8 @@ class MiraDesktop {
     async cleanup() {
         console.log('Cleaning up Mira Desktop App...');
 
-        // Stop audio capture if active
-        if (this.isRecording) {
+        // Stop VAD audio capture if active
+        if (this.isRecording && this.micVAD) {
             await this.stopAudioCapture();
         }
 
