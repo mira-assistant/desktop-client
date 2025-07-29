@@ -789,7 +789,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     
     // Handle app cleanup on window close - simplified to prevent multiple deregistration attempts
-    window.addEventListener('beforeunload', async (event) => {
+    window.addEventListener('beforeunload', async () => {
         if (window.miraApp && window.miraApp.isRegistered && !window.miraApp._deregistrationAttempted) {
             // Use navigator.sendBeacon for reliable cleanup during page unload
             const url = `${window.miraApp.baseUrl}/deregister_client?client_id=${encodeURIComponent(window.miraApp.clientId)}`;

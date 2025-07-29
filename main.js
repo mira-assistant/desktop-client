@@ -40,7 +40,7 @@ function createWindow() {
   });
 
   // Handle window close event to ensure cleanup
-  mainWindow.on('close', (event) => {
+  mainWindow.on('close', () => {
     // Send cleanup signal to renderer process before closing
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send('app-closing');
@@ -102,7 +102,7 @@ app.on('window-all-closed', () => {
 });
 
 // Handle app quit to ensure cleanup
-app.on('before-quit', (event) => {
+app.on('before-quit', () => {
   // Give the renderer process time to clean up
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send('app-closing');
@@ -116,7 +116,7 @@ ipcMain.handle('get-app-version', () => {
 
 // Security: Prevent new window creation
 app.on('web-contents-created', (event, contents) => {
-  contents.on('new-window', (event, navigationUrl) => {
+  contents.on('new-window', (navigationUrl) => {
     event.preventDefault();
     console.log('Blocked new window creation for:', navigationUrl);
   });
