@@ -1,0 +1,42 @@
+{
+  "name": "mira-desktop",
+  "version": "2.3.9",
+  "description": "Mira Desktop - Cross-platform voice transcription application",
+  "main": "main.js",
+  "scripts": {
+    "start": "node start-script.js",
+    "start-dev": "NODE_ENV=development node start-script.js",
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "build": "electron-builder",
+    "build-mac": "electron-builder --mac",
+    "build-win": "electron-builder --win"
+  },
+  "keywords": ["transcription", "whisper", "desktop", "voice"],
+  "author": "Mira Team",
+  "license": "ISC",
+  "devDependencies": {
+    "electron": "^37.2.4"
+  },
+  "build": {
+    "appId": "com.mira.desktop",
+    "productName": "Mira",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "renderer.js",
+      "style.css",
+      "index.html",
+      "preload.js",
+      "start-script.js",
+      "assets/**/*"
+    ],
+    "mac": {
+      "category": "public.app-category.productivity"
+    },
+    "win": {
+      "target": "nsis"
+    }
+  }
+}
