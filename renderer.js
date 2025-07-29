@@ -298,14 +298,39 @@ class MiraDesktop {
         }
     }
 
+    async waitForVADLibrary(timeout = 15000) {
+        console.log('Waiting for VAD library to load...');
+        const startTime = Date.now();
+        
+        while (Date.now() - startTime < timeout) {
+            if (window.vadLibraryLoaded) {
+                console.log('VAD library ready');
+                return;
+            }
+            
+            if (window.vadLibraryLoadError) {
+                throw new Error(`VAD library failed to load: ${window.vadLibraryLoadError}`);
+            }
+            
+            // Wait 100ms before checking again
+            await new Promise(resolve => setTimeout(resolve, 100));
+        }
+        
+        throw new Error('Timeout waiting for VAD library to load');
+    }
+
     async startAudioCapture() {
         try {
             console.log('Requesting microphone access...');
 
+            // Wait for VAD library to load with timeout
+            await this.waitForVADLibrary();
+
             // Check if VAD library is available, with detailed error reporting
             if (typeof vad === 'undefined') {
-                console.error('VAD library not found. CDN may be blocked or unavailable.');
-                throw new Error('Voice Activity Detection library is not available. Please check your internet connection and try again.');
+                console.error('VAD library not found. Library loading may have failed.');
+                const errorMsg = window.vadLibraryLoadError || 'Voice Activity Detection library is not available. Please refresh the page and try again.';
+                throw new Error(errorMsg);
             }
             
             if (!vad.MicVAD) {
@@ -414,17 +439,27 @@ class MiraDesktop {
             
             // Provide more specific error messages
             let errorMessage = 'Failed to initialize voice activity detection.';
-            if (error.message.includes('Permission denied')) {
+            if (error.message.includes('Permission denied') || error.name === 'NotAllowedError') {
                 errorMessage = 'Microphone permission denied. Please allow microphone access and try again.';
-            } else if (error.message.includes('internet') || error.message.includes('CDN')) {
-                errorMessage = 'Voice detection library failed to load. Please check your internet connection.';
-            } else if (error.message.includes('timeout')) {
+            } else if (error.message.includes('VAD library failed to load') || error.message.includes('library loading')) {
+                errorMessage = `Voice detection library failed to load: ${error.message}. Please refresh the page and try again.`;
+            } else if (error.message.includes('timeout') || error.message.includes('Timeout')) {
                 errorMessage = 'Voice detection initialization timed out. Please try again.';
             } else if (error.name === 'NotFoundError') {
                 errorMessage = 'No microphone found. Please connect a microphone and try again.';
-            } else if (error.name === 'NotAllowedError') {
-                errorMessage = 'Microphone access blocked. Please allow microphone access in your browser settings.';
+            } else if (error.message.includes('MicVAD')) {
+                errorMessage = 'Voice detection module is incomplete. Please refresh the page and try again.';
+            } else {
+                errorMessage = `Voice detection error: ${error.message}`;
             }
+            
+            console.error('Audio capture error details:', {
+                message: error.message,
+                name: error.name,
+                stack: error.stack,
+                vadLibraryLoaded: window.vadLibraryLoaded,
+                vadLibraryLoadError: window.vadLibraryLoadError
+            });
             
             this.showMessage(errorMessage, 'error');
             throw error;

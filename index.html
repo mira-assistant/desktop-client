@@ -126,32 +126,72 @@
 
     <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/ort.js"></script>
     <script>
-        // VAD library loading with fallback
-        let vadLibraryLoaded = false;
+        // VAD library loading with improved fallback mechanism
+        window.vadLibraryLoaded = false;
+        window.vadLibraryLoadError = null;
         
-        // Try to load from CDN first
-        const vadScript = document.createElement('script');
-        vadScript.src = 'https://cdn.jsdelivr.net/npm/@ricky0123/vad-web@latest/dist/bundle.min.js';
-        vadScript.onload = () => {
-            vadLibraryLoaded = true;
-            console.log('VAD library loaded from CDN successfully');
-        };
-        vadScript.onerror = () => {
-            console.warn('Failed to load VAD library from CDN, trying npm package...');
-            // Fallback to local npm package if CDN fails
-            const fallbackScript = document.createElement('script');
-            fallbackScript.src = './node_modules/@ricky0123/vad-web/dist/bundle.min.js';
-            fallbackScript.onload = () => {
-                vadLibraryLoaded = true;
-                console.log('VAD library loaded from local package successfully');
-            };
-            fallbackScript.onerror = () => {
-                console.error('Failed to load VAD library from both CDN and local package');
-                // The application will show an appropriate error message when trying to use VAD
-            };
-            document.head.appendChild(fallbackScript);
-        };
-        document.head.appendChild(vadScript);
+        // Function to load VAD library with proper error handling
+        async function loadVADLibrary() {
+            // Try local package first (more reliable in Electron)
+            try {
+                console.log('Attempting to load VAD library from local package...');
+                await new Promise((resolve, reject) => {
+                    const localScript = document.createElement('script');
+                    localScript.src = './node_modules/@ricky0123/vad-web/dist/bundle.min.js';
+                    localScript.onload = () => {
+                        if (typeof vad !== 'undefined' && vad.MicVAD) {
+                            window.vadLibraryLoaded = true;
+                            console.log('✅ VAD library loaded from local package successfully');
+                            console.log('Available VAD methods:', Object.keys(vad));
+                            resolve();
+                        } else {
+                            reject(new Error('VAD library loaded but MicVAD not found'));
+                        }
+                    };
+                    localScript.onerror = () => {
+                        reject(new Error('Failed to load from local package'));
+                    };
+                    document.head.appendChild(localScript);
+                });
+                return;
+            } catch (localError) {
+                console.warn('Local package failed:', localError.message);
+                
+                // Fallback to CDN
+                try {
+                    console.log('Attempting to load VAD library from CDN...');
+                    await new Promise((resolve, reject) => {
+                        const cdnScript = document.createElement('script');
+                        cdnScript.src = 'https://cdn.jsdelivr.net/npm/@ricky0123/vad-web@latest/dist/bundle.min.js';
+                        cdnScript.onload = () => {
+                            if (typeof vad !== 'undefined' && vad.MicVAD) {
+                                window.vadLibraryLoaded = true;
+                                console.log('✅ VAD library loaded from CDN successfully');
+                                console.log('Available VAD methods:', Object.keys(vad));
+                                resolve();
+                            } else {
+                                reject(new Error('VAD library loaded but MicVAD not found'));
+                            }
+                        };
+                        cdnScript.onerror = () => {
+                            reject(new Error('Failed to load from CDN'));
+                        };
+                        document.head.appendChild(cdnScript);
+                    });
+                    return;
+                } catch (cdnError) {
+                    console.error('CDN fallback failed:', cdnError.message);
+                    window.vadLibraryLoadError = `Failed to load VAD library from both local package and CDN. Local: ${localError.message}, CDN: ${cdnError.message}`;
+                    throw new Error(window.vadLibraryLoadError);
+                }
+            }
+        }
+        
+        // Start loading VAD library immediately
+        loadVADLibrary().catch(error => {
+            console.error('❌ Failed to load VAD library:', error.message);
+            window.vadLibraryLoadError = error.message;
+        });
     </script>
     <script src="renderer.js"></script>
 </body>
