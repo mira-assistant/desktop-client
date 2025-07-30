@@ -694,8 +694,6 @@ class MiraDesktop {
                     if (!existingTranscription) {
                         console.log(`Adding new transcription: ${interactionId}`);
                         this.addTranscriptionFromInteraction(interaction);
-                    } else {
-                        console.log(`Skipping existing transcription: ${interactionId}`);
                     }
                 });
             }
