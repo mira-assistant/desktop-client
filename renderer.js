@@ -640,6 +640,7 @@ class MiraDesktop {
         // Update UI to show VAD status
         const statusMessages = {
             'waiting': 'Waiting for speech...',
+            'stopping': "Disabling Mira",
             'speaking': 'Speaking detected...',
             'processing': 'Processing speech...',
             'stopped': 'VAD stopped'
@@ -649,7 +650,7 @@ class MiraDesktop {
         if (this.isListening && this.micStatusText) {
             const message = statusMessages[status] || 'Unknown status';
             // Only update if not showing the main listening message
-            if (status !== 'waiting') {
+            if (status === 'stopping') {
                 this.micStatusText.textContent = message;
             } else {
                 this.micStatusText.textContent = 'Listening... Click to stop';
@@ -1025,7 +1026,7 @@ class MiraDesktop {
         // Check connection every 5 seconds
         this.connectionCheckInterval = setInterval(() => {
             this.checkConnection();
-        }, 5000);
+        }, 1000);
     }
 
     // Debug method to show audio processing statistics
