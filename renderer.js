@@ -1,4 +1,30 @@
 // Mira Desktop Renderer Process
+//
+// Troubleshooting Guide:
+// =====================
+//
+// 1. If button is laggy or unresponsive:
+//    - Check browser console for errors
+//    - Try Ctrl+Shift+M to toggle debug mode for detailed logging
+//    - Use Ctrl+Shift+T to test backend connection
+//
+// 2. If no audio is being sent to backend:
+//    - Check that microphone permission is granted
+//    - Use Ctrl+Shift+D to show audio processing statistics
+//    - Look for "Sending X bytes of VAD-detected speech to backend" in console
+//    - Verify VAD library loaded successfully (should see "VAD library loaded" message)
+//
+// 3. If VAD library fails to load:
+//    - Check internet connection (loads from CDN)
+//    - Check browser console for "Failed to load VAD library" errors
+//    - The app will try both CDN and local npm package as fallback
+//
+// 4. Debug commands in browser console:
+//    - window.miraApp.showAudioStats() - Show audio processing statistics
+//    - window.miraApp.testBackendConnection() - Test backend connectivity
+//    - window.miraApp.debugMode = true - Enable detailed logging
+//    - window.miraApp.audioProcessingStats - View raw audio stats
+//
 class MiraDesktop {
     constructor() {
         this.baseUrl = 'http://localhost:8000';
@@ -13,18 +39,34 @@ class MiraDesktop {
         this.connectionCheckInterval = null;
         this.hasShownStartupDemo = false; // Track if startup demo transcriptions have been shown
 
-        // Audio capture properties
-        this.mediaStream = null;
-        this.audioContext = null;
-        this.audioProcessor = null;
-        this.audioChunks = [];
+        // Audio capture properties - VAD-based
+        this.micVAD = null; // Voice Activity Detection instance
         this.isRecording = false;
-        this.lastAudioSent = 0; // Timestamp of last audio send
-        this.audioSendThrottle = 500; // Throttle for audio sending
+        this.audioProcessingStats = {
+            totalAudioSent: 0,
+            totalAudioBytes: 0,
+            successfulRequests: 0,
+            failedRequests: 0,
+            averageAudioDuration: 0
+        };
+
+        // Debug mode (can be enabled via console: window.miraApp.debugMode = true)
+        this.debugMode = false;
 
         this.initializeElements();
         this.setupEventListeners();
         this.startConnectionCheck();
+
+        console.log('Mira Desktop initialized - debug info:');
+        console.log('- Base URL:', this.baseUrl);
+        console.log('- Client ID:', this.clientId);
+        console.log('- Audio stats available at: window.miraApp.audioProcessingStats');
+        console.log('- Enable debug mode: window.miraApp.debugMode = true');
+        console.log('- Keyboard shortcuts:');
+        console.log('  * Space: Toggle listening');
+        console.log('  * Ctrl+Shift+D: Show audio stats');
+        console.log('  * Ctrl+Shift+M: Toggle debug mode');
+        console.log('  * Ctrl+Shift+T: Test backend connection');
     }
 
     initializeElements() {
@@ -142,15 +184,20 @@ class MiraDesktop {
 
         // Prevent multiple simultaneous calls
         if (this.isToggling) {
+            console.log('Toggle already in progress, ignoring');
             return;
         }
 
         this.isToggling = true;
+        const originalButtonText = this.micStatusText.textContent;
 
         try {
-            // Provide immediate UI feedback
-            this.micButton.disabled = true;
+            // Provide immediate responsive UI feedback
+            this.micButton.style.opacity = '0.7';
             this.micStatusText.textContent = this.isListening ? 'Stopping...' : 'Starting...';
+
+            // Add a slight delay to ensure UI update is visible
+            await new Promise(resolve => setTimeout(resolve, 50));
 
             if (this.isListening) {
                 await this.stopListening();
@@ -159,12 +206,29 @@ class MiraDesktop {
             }
         } catch (error) {
             console.error('Error toggling listening:', error);
-            this.showMessage('Error: ' + error.message);
+
+            // Provide specific error messages to user
+            let errorMessage = 'Error: ' + error.message;
+            if (error.message.includes('Permission denied') || error.message.includes('NotAllowedError')) {
+                errorMessage = 'Microphone permission denied. Please allow microphone access and try again.';
+            } else if (error.message.includes('internet') || error.message.includes('VAD library')) {
+                errorMessage = 'Voice detection library failed to load. Please check your internet connection and refresh the page.';
+            } else if (error.message.includes('timeout')) {
+                errorMessage = 'Operation timed out. Please try again.';
+            }
+
+            this.showMessage(errorMessage, 'error');
+
             // Reset UI state on error
             this.updateListeningUI(this.isListening);
         } finally {
             this.isToggling = false;
-            this.micButton.disabled = false;
+            this.micButton.style.opacity = '1';
+
+            // Only restore original text if we're not listening (success state will update it)
+            if (!this.isListening && this.micStatusText.textContent.includes('...')) {
+                this.micStatusText.textContent = originalButtonText;
+            }
         }
     }
 
@@ -234,67 +298,170 @@ class MiraDesktop {
         }
     }
 
+    async waitForVADLibrary(timeout = 15000) {
+        console.log('Waiting for VAD library to load...');
+        const startTime = Date.now();
+
+        while (Date.now() - startTime < timeout) {
+            if (window.vadLibraryLoaded) {
+                console.log('VAD library ready');
+                return;
+            }
+
+            if (window.vadLibraryLoadError) {
+                throw new Error(`VAD library failed to load: ${window.vadLibraryLoadError}`);
+            }
+
+            // Wait 100ms before checking again
+            await new Promise(resolve => setTimeout(resolve, 100));
+        }
+
+        throw new Error('Timeout waiting for VAD library to load');
+    }
+
     async startAudioCapture() {
         try {
             console.log('Requesting microphone access...');
 
-            // Request microphone access
-            this.mediaStream = await navigator.mediaDevices.getUserMedia({
-                audio: {
-                    sampleRate: 16000,
-                    channelCount: 1,
+            // Wait for VAD library to load with timeout
+            await this.waitForVADLibrary();
+
+            // Check if VAD library is available, with detailed error reporting
+            if (typeof vad === 'undefined') {
+                console.error('VAD library not found. Library loading may have failed.');
+                const errorMsg = window.vadLibraryLoadError || 'Voice Activity Detection library is not available. Please refresh the page and try again.';
+                throw new Error(errorMsg);
+            }
+
+            if (!vad.MicVAD) {
+                console.error('MicVAD not found in VAD library object:', Object.keys(vad));
+                throw new Error('Voice Activity Detection module is incomplete. Please refresh the page and try again.');
+            }
+
+            const { MicVAD } = vad;
+            console.log('VAD library loaded successfully, setting up audio processing...');
+
+            // Initialize VAD with custom options for 0.6s silence detection
+            const sampleRate = 16000;
+            const frameSamples = 1536; // Default frame size
+            // Calculate redemption frames for ~0.6s silence detection
+            const targetSilenceMs = 580; // Slightly less than 0.6s for better responsiveness
+            const redemptionFrames = Math.max(1, Math.round((targetSilenceMs * sampleRate) / (frameSamples * 1000)));
+
+            console.log(`Setting up VAD with ${redemptionFrames} redemption frames for ${targetSilenceMs}ms silence detection`);
+
+            // Add timeout for VAD initialization
+            const vadInitPromise = MicVAD.new({
+                // VAD model options
+                model: 'legacy', // Use legacy model for better compatibility
+
+                // Speech detection thresholds - more sensitive settings
+                positiveSpeechThreshold: 0.3, // Lower threshold for better detection
+                negativeSpeechThreshold: 0.25,
+
+                // Silence detection - customized for ~0.6s like terminal-client
+                redemptionFrames: redemptionFrames,
+
+                // Audio quality settings
+                frameSamples: frameSamples,
+                preSpeechPadFrames: 1, // Reduced for faster response
+                minSpeechFrames: 3, // Reduced minimum to avoid missing short utterances
+
+                // Enhanced audio constraints for better quality
+                additionalAudioConstraints: {
+                    sampleRate: sampleRate,
                     echoCancellation: true,
                     noiseSuppression: true,
-                    autoGainControl: true
+                    autoGainControl: true,
+                    channelCount: 1 // Ensure mono audio
+                },
+
+                // Callbacks for VAD events
+                onSpeechStart: () => {
+                    console.log('VAD: Speech started');
+                    this.updateVADStatus('speaking');
+                },
+
+                onSpeechEnd: (audio) => {
+                    try {
+                        const durationSeconds = audio.length / sampleRate;
+                        console.log(`VAD: Speech ended, processing ${durationSeconds.toFixed(2)}s of audio (${audio.length} samples)`);
+                        this.updateVADStatus('processing');
+
+                        // Validate audio data before sending
+                        if (audio && audio.length > 0) {
+                            this.sendVADAudioToBackend(audio);
+                        } else {
+                            console.warn('VAD: Empty audio data received, skipping');
+                            this.updateVADStatus('waiting');
+                        }
+                    } catch (err) {
+                        console.error('VAD: Error in onSpeechEnd callback:', err);
+                        this.updateVADStatus('waiting');
+                    }
+                },
+
+                onVADMisfire: () => {
+                    console.log('VAD: Speech detected but too short (misfire)');
+                    this.updateVADStatus('waiting');
+                },
+
+                onFrameProcessed: (probabilities) => {
+                    // Optional: Could show real-time speech probability for debugging
+                    if (probabilities && probabilities.isSpeech > 0.5) {
+                        console.log('VAD probability:', probabilities.isSpeech.toFixed(3));
+                    }
+                },
+
+                onError: (error) => {
+                    console.error('VAD: Internal error:', error);
+                    this.showMessage('Voice detection error: ' + error.message, 'error');
                 }
             });
 
-            console.log('Microphone access granted, setting up audio processing...');
+            // Set a timeout for VAD initialization
+            const timeoutPromise = new Promise((_, reject) => {
+                setTimeout(() => reject(new Error('VAD initialization timeout after 10 seconds')), 10000);
+            });
 
-            // Create audio context
-            this.audioContext = new AudioContext({ sampleRate: 16000 });
-            const source = this.audioContext.createMediaStreamSource(this.mediaStream);
+            this.micVAD = await Promise.race([vadInitPromise, timeoutPromise]);
 
-            // Create a script processor for audio data - using 4096 buffer for stable capture
-            this.audioProcessor = this.audioContext.createScriptProcessor(4096, 1, 1);
+            console.log('VAD initialized successfully, starting...');
 
-            this.audioChunks = [];
+            // Start VAD listening with error handling
+            await this.micVAD.start();
             this.isRecording = true;
+            this.updateVADStatus('waiting');
 
-            // Simple time-based audio processing without complex VAD
-            this.audioProcessor.onaudioprocess = (event) => {
-                if (this.isRecording) {
-                    const inputData = event.inputBuffer.getChannelData(0);
-
-                    // Convert to 16-bit PCM
-                    const pcmData = new Int16Array(inputData.length);
-                    for (let i = 0; i < inputData.length; i++) {
-                        pcmData[i] = Math.max(-32768, Math.min(32767, inputData[i] * 32768));
-                    }
-
-                    // Always add to audio chunks
-                    this.audioChunks.push(pcmData);
-
-                    // Check if we have enough audio data to send (about 2 seconds worth)
-                    const totalSamples = this.audioChunks.reduce((sum, chunk) => sum + chunk.length, 0);
-                    const durationSeconds = totalSamples / 16000;
-
-                    // Send audio when we have at least 2 seconds of data
-                    if (durationSeconds >= 2.0) {
-                        console.log(`Sending ${durationSeconds.toFixed(2)}s of audio to backend`);
-                        this.sendAudioToBackend();
-                    }
-                }
-            };
-
-            // Connect the audio pipeline
-            source.connect(this.audioProcessor);
-            this.audioProcessor.connect(this.audioContext.destination);
-
-            console.log('Audio capture started successfully');
+            console.log('VAD-based audio capture started successfully');
         } catch (error) {
-            console.error('Error starting audio capture:', error);
-            this.showMessage('Microphone access denied. Please allow microphone access and try again.');
+            console.error('Error starting VAD audio capture:', error);
+
+            // Provide more specific error messages
+            let errorMessage = 'Failed to initialize voice activity detection.';
+            if (error.message.includes('Permission denied') || error.name === 'NotAllowedError') {
+                errorMessage = 'Microphone permission denied. Please allow microphone access and try again.';
+            } else if (error.message.includes('VAD library failed to load') || error.message.includes('library loading')) {
+                errorMessage = `Voice detection library failed to load: ${error.message}. Please refresh the page and try again.`;
+            } else if (error.message.includes('timeout') || error.message.includes('Timeout')) {
+                errorMessage = 'Voice detection initialization timed out. Please try again.';
+            } else if (error.name === 'NotFoundError') {
+                errorMessage = 'No microphone found. Please connect a microphone and try again.';
+            } else if (error.message.includes('MicVAD')) {
+                errorMessage = 'Voice detection module is incomplete. Please refresh the page and try again.';
+            } else {
+                errorMessage = `Voice detection error: ${error.message}`;
+            }
+
+            console.error('Audio capture error details:', {
+                message: error.message,
+                name: error.name,
+                stack: error.stack,
+                vadLibraryLoaded: window.vadLibraryLoaded,
+                vadLibraryLoadError: window.vadLibraryLoadError
+            });
+
+            this.showMessage(errorMessage, 'error');
             throw error;
         }
     }
@@ -303,97 +470,192 @@ class MiraDesktop {
         try {
             this.isRecording = false;
 
-            // Send any remaining audio data if we have some
-            if (this.audioChunks.length > 0) {
-                await this.sendAudioToBackend();
+            // Clean up VAD resources
+            if (this.micVAD) {
+                this.micVAD.destroy();
+                this.micVAD = null;
             }
 
-            // Clean up audio resources
-            if (this.audioProcessor) {
-                this.audioProcessor.disconnect();
-                this.audioProcessor = null;
-            }
+            // Reset VAD status
+            this.updateVADStatus('stopped');
 
-            if (this.audioContext) {
-                await this.audioContext.close();
-                this.audioContext = null;
-            }
-
-            if (this.mediaStream) {
-                this.mediaStream.getTracks().forEach(track => track.stop());
-                this.mediaStream = null;
-            }
-
-            this.audioChunks = [];
-            console.log('Audio capture stopped');
+            console.log('VAD audio capture stopped');
         } catch (error) {
-            console.error('Error stopping audio capture:', error);
+            console.error('Error stopping VAD audio capture:', error);
         }
     }
 
-    async sendAudioToBackend() {
-        if (this.audioChunks.length === 0 || this.isProcessingAudio) return;
+    async sendVADAudioToBackend(audioFloat32Array) {
+        if (!audioFloat32Array || audioFloat32Array.length === 0) {
+            console.warn('sendVADAudioToBackend: Empty or invalid audio data');
+            return;
+        }
 
-        // Light throttle to prevent overwhelming the backend
-        const now = Date.now();
-        if (now - this.lastAudioSent < this.audioSendThrottle) {
+        if (this.isProcessingAudio) {
+            console.warn('sendVADAudioToBackend: Already processing audio, skipping');
             return;
         }
 
         this.isProcessingAudio = true;
-        this.lastAudioSent = now;
+        console.log(`sendVADAudioToBackend: Processing ${audioFloat32Array.length} audio samples`);
 
-        const chunksToProcess = this.audioChunks.length;
-        console.log(`Sending ${chunksToProcess} audio chunks to backend (${now})...`);
+        if (this.debugMode) {
+            console.log('DEBUG: Audio sample stats:');
+            console.log('- Sample rate: 16000 Hz');
+            console.log('- Duration:', (audioFloat32Array.length / 16000).toFixed(3), 'seconds');
+            console.log('- Min sample:', Math.min(...audioFloat32Array).toFixed(4));
+            console.log('- Max sample:', Math.max(...audioFloat32Array).toFixed(4));
+            console.log('- RMS:', Math.sqrt(audioFloat32Array.reduce((sum, x) => sum + x*x, 0) / audioFloat32Array.length).toFixed(4));
+        }
 
         try {
-            // Combine all audio chunks into a single buffer
-            const totalLength = this.audioChunks.reduce((sum, chunk) => sum + chunk.length, 0);
-            const combinedBuffer = new Int16Array(totalLength);
-            let offset = 0;
-
-            for (const chunk of this.audioChunks) {
-                combinedBuffer.set(chunk, offset);
-                offset += chunk.length;
+            // Validate audio data
+            if (!(audioFloat32Array instanceof Float32Array)) {
+                console.error('Invalid audio data type:', typeof audioFloat32Array);
+                throw new Error('Invalid audio data format');
             }
 
-            // Convert to bytes for backend
-            const audioBytes = new Uint8Array(combinedBuffer.buffer);
-            console.log(`Sending ${audioBytes.length} bytes of audio data to backend`);
+            // Convert Float32Array to 16-bit PCM for backend compatibility
+            const audioInt16 = new Int16Array(audioFloat32Array.length);
+            let validSamples = 0;
 
-            // Clear processed chunks immediately to prevent reprocessing
-            this.audioChunks = [];
+            for (let i = 0; i < audioFloat32Array.length; i++) {
+                // Clamp and convert to 16-bit signed integer
+                const sample = Math.max(-1, Math.min(1, audioFloat32Array[i]));
+                audioInt16[i] = Math.round(sample * 32767);
 
-            // Send to backend with optimized fetch options
+                // Count non-zero samples to validate audio content
+                if (Math.abs(sample) > 0.001) {
+                    validSamples++;
+                }
+            }
+
+            // Validate that we have meaningful audio content
+            const validSampleRatio = validSamples / audioFloat32Array.length;
+            if (validSampleRatio < 0.001) {
+                console.warn('Audio appears to be mostly silence, validSamples:', validSamples, 'of', audioFloat32Array.length);
+                // Still send it, but log the warning
+            } else {
+                console.log(`Audio validation: ${validSamples}/${audioFloat32Array.length} non-silent samples (${(validSampleRatio * 100).toFixed(1)}%)`);
+            }
+
+            // Convert to bytes for backend (little-endian)
+            const audioBytes = new Uint8Array(audioInt16.buffer);
+            console.log(`Sending ${audioBytes.length} bytes (${audioInt16.length} samples) of VAD-detected speech to backend`);
+
+            // Validate connection before sending
+            if (!this.isConnected) {
+                throw new Error('Backend connection lost');
+            }
+
+            // Send to backend with enhanced error handling
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 second timeout
+
             const response = await fetch(`${this.baseUrl}/register_interaction`, {
                 method: 'POST',
                 headers: {
-                    'Content-Type': 'application/octet-stream'
+                    'Content-Type': 'application/octet-stream',
+                    'Content-Length': audioBytes.length.toString()
                 },
                 body: audioBytes,
-                // Add performance optimizations
-                keepalive: true,
+                signal: controller.signal,
+                // Performance optimizations
+                keepalive: false, // Changed to false to avoid potential issues
                 cache: 'no-cache'
             });
 
+            clearTimeout(timeoutId);
+
             if (response.ok) {
-                const result = await response.json();
-                if (result.message !== "Duplicate transcription skipped") {
-                    console.log('Audio processed successfully:', result);
-                } else {
-                    console.log('Duplicate transcription was skipped');
+                this.audioProcessingStats.successfulRequests++;
+                this.audioProcessingStats.totalAudioSent++;
+                this.audioProcessingStats.totalAudioBytes += audioBytes.length;
+                this.audioProcessingStats.averageAudioDuration =
+                    ((this.audioProcessingStats.averageAudioDuration * (this.audioProcessingStats.totalAudioSent - 1)) +
+                     (audioFloat32Array.length / 16000)) / this.audioProcessingStats.totalAudioSent;
+
+                try {
+                    const result = await response.json();
+                    if (result.message !== "Duplicate transcription skipped") {
+                        console.log('VAD audio processed successfully:', result);
+                        if (this.debugMode) {
+                            console.log('DEBUG: Backend response:', result);
+                        }
+                    } else {
+                        console.log('Duplicate transcription was skipped');
+                    }
+                } catch (jsonError) {
+                    console.warn('Response was OK but failed to parse JSON:', jsonError);
+                    // Still consider this a success since the audio was sent
                 }
                 // The transcription polling will pick up any new interactions
             } else {
-                const errorText = await response.text();
-                console.error('Failed to process audio:', response.status, response.statusText, errorText);
+                this.audioProcessingStats.failedRequests++;
+                let errorText = 'Unknown error';
+                try {
+                    errorText = await response.text();
+                } catch (textError) {
+                    console.warn('Failed to read error response text:', textError);
+                }
+                const errorMessage = `HTTP ${response.status}: ${response.statusText}`;
+                console.error('Failed to process VAD audio:', errorMessage, errorText);
+
+                // Show user-friendly error message
+                if (response.status === 404) {
+                    this.showMessage('Backend endpoint not found. Please check if the backend is running correctly.');
+                } else if (response.status >= 500) {
+                    this.showMessage('Backend server error. Please try again.');
+                } else {
+                    this.showMessage(`Failed to process audio: ${errorMessage}`);
+                }
             }
 
         } catch (error) {
-            console.error('Error sending audio to backend:', error);
+            console.error('Error sending VAD audio to backend:', error);
+
+            // Provide specific error messages
+            if (error.name === 'AbortError') {
+                this.showMessage('Audio processing timed out. Please try speaking again.');
+            } else if (error.message.includes('Failed to fetch') || error.message.includes('network')) {
+                this.showMessage('Network error. Please check your connection to the backend.');
+            } else if (error.message.includes('Backend connection lost')) {
+                this.showMessage('Connection to backend lost. Reconnecting...');
+                // Trigger reconnection check
+                this.checkConnection();
+            } else {
+                this.showMessage('Error processing audio: ' + error.message);
+            }
         } finally {
             this.isProcessingAudio = false;
+            // Always return to waiting state unless we're no longer listening
+            if (this.isListening) {
+                this.updateVADStatus('waiting');
+            }
         }
+    }
+
+    updateVADStatus(status) {
+        // Update UI to show VAD status
+        const statusMessages = {
+            'waiting': 'Waiting for speech...',
+            'speaking': 'Speaking detected...',
+            'processing': 'Processing speech...',
+            'stopped': 'VAD stopped'
+        };
+
+        // Update microphone status text if listening
+        if (this.isListening && this.micStatusText) {
+            const message = statusMessages[status] || 'Unknown status';
+            // Only update if not showing the main listening message
+            if (status !== 'waiting') {
+                this.micStatusText.textContent = message;
+            } else {
+                this.micStatusText.textContent = 'Listening... Click to stop';
+            }
+        }
+
+        console.log(`VAD Status: ${statusMessages[status] || status}`);
     }
 
     updateFeatures(features) {
@@ -730,10 +992,62 @@ class MiraDesktop {
         this.connectionBanner.style.display = 'none';
     }
 
-    showMessage(message) {
-        // Simple message display - could be enhanced with toast notifications
+    showMessage(message, type = 'info') {
         console.log('Message:', message);
-        // You could add a toast notification system here
+
+        // Create a simple toast notification for user feedback
+        const toast = document.createElement('div');
+        toast.className = `toast toast-${type}`;
+        toast.style.cssText = `
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            max-width: 400px;
+            padding: 12px 16px;
+            background: ${type === 'error' ? '#ff4444' : type === 'warning' ? '#ffaa00' : '#00aa44'};
+            color: white;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+            z-index: 10000;
+            font-size: 14px;
+            font-weight: 500;
+            opacity: 0;
+            transform: translateX(100%);
+            transition: all 0.3s ease;
+            word-wrap: break-word;
+        `;
+
+        toast.textContent = message;
+        document.body.appendChild(toast);
+
+        // Animate in
+        setTimeout(() => {
+            toast.style.opacity = '1';
+            toast.style.transform = 'translateX(0)';
+        }, 10);
+
+        // Auto-remove after delay
+        const duration = Math.max(3000, Math.min(8000, message.length * 50)); // 3-8 seconds based on length
+        setTimeout(() => {
+            toast.style.opacity = '0';
+            toast.style.transform = 'translateX(100%)';
+            setTimeout(() => {
+                if (toast.parentNode) {
+                    toast.parentNode.removeChild(toast);
+                }
+            }, 300);
+        }, duration);
+
+        // Allow manual dismiss on click
+        toast.addEventListener('click', () => {
+            toast.style.opacity = '0';
+            toast.style.transform = 'translateX(100%)';
+            setTimeout(() => {
+                if (toast.parentNode) {
+                    toast.parentNode.removeChild(toast);
+                }
+            }, 300);
+        });
     }
 
     startConnectionCheck() {
@@ -746,12 +1060,87 @@ class MiraDesktop {
         }, 5000);
     }
 
+    // Debug method to show audio processing statistics
+    showAudioStats() {
+        const stats = this.audioProcessingStats;
+        console.log('📊 Audio Processing Statistics:');
+        console.log(`- Total audio segments sent: ${stats.totalAudioSent}`);
+        console.log(`- Total bytes sent: ${stats.totalAudioBytes.toLocaleString()}`);
+        console.log(`- Successful requests: ${stats.successfulRequests}`);
+        console.log(`- Failed requests: ${stats.failedRequests}`);
+        console.log(`- Success rate: ${stats.totalAudioSent > 0 ? ((stats.successfulRequests / (stats.successfulRequests + stats.failedRequests)) * 100).toFixed(1) : 0}%`);
+        console.log(`- Average audio duration: ${stats.averageAudioDuration.toFixed(2)}s`);
+        console.log(`- VAD status: ${this.isRecording ? 'Recording' : 'Stopped'}`);
+        console.log(`- Backend connection: ${this.isConnected ? 'Connected' : 'Disconnected'}`);
+
+        // Show in UI as well
+        this.showMessage(`Audio Stats: ${stats.totalAudioSent} segments sent, ${stats.successfulRequests} successful, ${stats.failedRequests} failed`, 'info');
+
+        return stats;
+    }
+
+    // Test backend connectivity with detailed reporting
+    async testBackendConnection() {
+        console.log('🔗 Testing backend connection...');
+
+        try {
+            // Test basic connection
+            const startTime = Date.now();
+            const response = await fetch(`${this.baseUrl}/`, {
+                method: 'GET',
+                cache: 'no-cache'
+            });
+            const responseTime = Date.now() - startTime;
+
+            console.log(`- Response time: ${responseTime}ms`);
+            console.log(`- Status: ${response.status} ${response.statusText}`);
+
+            if (response.ok) {
+                const data = await response.json();
+                console.log('- Backend response:', data);
+
+                // Test the register_interaction endpoint with dummy data
+                console.log('🎵 Testing audio endpoint...');
+                const dummyAudio = new Uint8Array(1600); // 0.1s of silence at 16kHz
+
+                const audioTestStart = Date.now();
+                const audioResponse = await fetch(`${this.baseUrl}/register_interaction`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/octet-stream'
+                    },
+                    body: dummyAudio
+                });
+                const audioResponseTime = Date.now() - audioTestStart;
+
+                console.log(`- Audio endpoint response time: ${audioResponseTime}ms`);
+                console.log(`- Audio endpoint status: ${audioResponse.status} ${audioResponse.statusText}`);
+
+                if (audioResponse.ok) {
+                    const audioResult = await audioResponse.json();
+                    console.log('- Audio endpoint response:', audioResult);
+                    this.showMessage('Backend connection test successful!', 'info');
+                } else {
+                    const errorText = await audioResponse.text();
+                    console.log('- Audio endpoint error:', errorText);
+                    this.showMessage('Backend connection OK, but audio endpoint has issues', 'warning');
+                }
+            } else {
+                this.showMessage('Backend connection failed', 'error');
+            }
+
+        } catch (error) {
+            console.error('Backend connection test failed:', error);
+            this.showMessage('Backend connection test failed: ' + error.message, 'error');
+        }
+    }
+
     // Cleanup method for when the app is closing
     async cleanup() {
         console.log('Cleaning up Mira Desktop App...');
 
-        // Stop audio capture if active
-        if (this.isRecording) {
+        // Stop VAD audio capture if active
+        if (this.isRecording && this.micVAD) {
             await this.stopAudioCapture();
         }
 
@@ -815,6 +1204,31 @@ document.addEventListener('keydown', (e) => {
         e.preventDefault();
         if (window.miraApp && window.miraApp.isConnected) {
             window.miraApp.toggleListening();
+        }
+    }
+
+    // Debug shortcuts (Ctrl+Shift+D for debug stats, Ctrl+Shift+M for debug mode toggle)
+    if (e.ctrlKey && e.shiftKey && e.code === 'KeyD') {
+        e.preventDefault();
+        if (window.miraApp) {
+            window.miraApp.showAudioStats();
+        }
+    }
+
+    if (e.ctrlKey && e.shiftKey && e.code === 'KeyM') {
+        e.preventDefault();
+        if (window.miraApp) {
+            window.miraApp.debugMode = !window.miraApp.debugMode;
+            console.log('Debug mode:', window.miraApp.debugMode ? 'ENABLED' : 'DISABLED');
+            window.miraApp.showMessage(`Debug mode ${window.miraApp.debugMode ? 'enabled' : 'disabled'}`, 'info');
+        }
+    }
+
+    // Backend connection test (Ctrl+Shift+T)
+    if (e.ctrlKey && e.shiftKey && e.code === 'KeyT') {
+        e.preventDefault();
+        if (window.miraApp) {
+            window.miraApp.testBackendConnection();
         }
     }
 });

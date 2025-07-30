@@ -1,7 +1,6 @@
-
-
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -10,6 +9,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
+
 <body>
     <div class="app-container">
         <!-- Header with status -->
@@ -38,7 +38,8 @@
                         <div class="mic-button-inner">
                             <div class="mic-icon" id="micIcon">
                                 <svg class="mic-svg" viewBox="0 0 24 24" fill="currentColor">
-                                    <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5.3-3c0 3-2.54 5.1-5.3 5.1S6.7 14 6.7 11H5c0 3.41 2.72 6.23 6 6.72V21h2v-3.28c3.28-.48 6-3.3 6-6.72h-1.7z"/>
+                                    <path
+                                        d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5.3-3c0 3-2.54 5.1-5.3 5.1S6.7 14 6.7 11H5c0 3.41 2.72 6.23 6 6.72V21h2v-3.28c3.28-.48 6-3.3 6-6.72h-1.7z" />
                                 </svg>
                             </div>
                         </div>
@@ -53,7 +54,7 @@
                     </button>
                     <p class="mic-status-text" id="micStatusText">Click to start listening</p>
                 </div>
-                
+
                 <div class="controls-info">
                     <div class="info-card">
                         <h3>Features</h3>
@@ -62,14 +63,16 @@
                                 <i class="fas fa-brain"></i>
                                 <div class="feature-content">
                                     <span class="feature-name">Advanced NLP Processing</span>
-                                    <span class="feature-description">Intelligent text analysis and context understanding</span>
+                                    <span class="feature-description">Intelligent text analysis and context
+                                        understanding</span>
                                 </div>
                             </div>
                             <div class="feature-item">
                                 <i class="fas fa-users"></i>
                                 <div class="feature-content">
                                     <span class="feature-name">Speaker Clustering</span>
-                                    <span class="feature-description">Automatically identify and separate different speakers</span>
+                                    <span class="feature-description">Automatically identify and separate different
+                                        speakers</span>
                                 </div>
                             </div>
                             <div class="feature-item">
@@ -83,7 +86,8 @@
                                 <i class="fas fa-database"></i>
                                 <div class="feature-content">
                                     <span class="feature-name">Database Integration</span>
-                                    <span class="feature-description">Seamlessly store and search transcription history</span>
+                                    <span class="feature-description">Seamlessly store and search transcription
+                                        history</span>
                                 </div>
                             </div>
                         </div>
@@ -124,6 +128,76 @@
         </div>
     </div>
 
+    <script src="./node_modules/onnxruntime-web/dist/ort.js"></script>
+    <script>
+        // VAD library loading with improved fallback mechanism
+        window.vadLibraryLoaded = false;
+        window.vadLibraryLoadError = null;
+
+        // Function to load VAD library with proper error handling
+        async function loadVADLibrary() {
+            // Try local package first (more reliable in Electron)
+            try {
+                console.log('Attempting to load VAD library from local package...');
+                await new Promise((resolve, reject) => {
+                    const localScript = document.createElement('script');
+                    localScript.src = './node_modules/@ricky0123/vad-web/dist/bundle.min.js';
+                    localScript.onload = () => {
+                        if (typeof vad !== 'undefined' && vad.MicVAD) {
+                            window.vadLibraryLoaded = true;
+                            console.log('✅ VAD library loaded from local package successfully');
+                            console.log('Available VAD methods:', Object.keys(vad));
+                            resolve();
+                        } else {
+                            reject(new Error('VAD library loaded but MicVAD not found'));
+                        }
+                    };
+                    localScript.onerror = () => {
+                        reject(new Error('Failed to load from local package'));
+                    };
+                    document.head.appendChild(localScript);
+                });
+                return;
+            } catch (localError) {
+                console.warn('Local package failed:', localError.message);
+
+                // Fallback to CDN
+                try {
+                    console.log('Attempting to load VAD library from CDN...');
+                    await new Promise((resolve, reject) => {
+                        const cdnScript = document.createElement('script');
+                        cdnScript.src = 'https://cdn.jsdelivr.net/npm/@ricky0123/vad-web@latest/dist/bundle.min.js';
+                        cdnScript.onload = () => {
+                            if (typeof vad !== 'undefined' && vad.MicVAD) {
+                                window.vadLibraryLoaded = true;
+                                console.log('✅ VAD library loaded from CDN successfully');
+                                console.log('Available VAD methods:', Object.keys(vad));
+                                resolve();
+                            } else {
+                                reject(new Error('VAD library loaded but MicVAD not found'));
+                            }
+                        };
+                        cdnScript.onerror = () => {
+                            reject(new Error('Failed to load from CDN'));
+                        };
+                        document.head.appendChild(cdnScript);
+                    });
+                    return;
+                } catch (cdnError) {
+                    console.error('CDN fallback failed:', cdnError.message);
+                    window.vadLibraryLoadError = `Failed to load VAD library from both local package and CDN. Local: ${localError.message}, CDN: ${cdnError.message}`;
+                    throw new Error(window.vadLibraryLoadError);
+                }
+            }
+        }
+
+        // Start loading VAD library immediately
+        loadVADLibrary().catch(error => {
+            console.error('❌ Failed to load VAD library:', error.message);
+            window.vadLibraryLoadError = error.message;
+        });
+    </script>
     <script src="renderer.js"></script>
 </body>
+
 </html>
