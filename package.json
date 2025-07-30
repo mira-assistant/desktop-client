@@ -1,6 +1,6 @@
 {
   "name": "mira-desktop",
-  "version": "2.3.9",
+  "version": "4.1.1",
   "description": "Mira Desktop - Cross-platform voice transcription application",
   "main": "main.js",
   "type": "commonjs",

@@ -1,46 +1,18 @@
-// Mira Desktop Renderer Process
-//
-// Troubleshooting Guide:
-// =====================
-//
-// 1. If button is laggy or unresponsive:
-//    - Check browser console for errors
-//    - Try Ctrl+Shift+M to toggle debug mode for detailed logging
-//    - Use Ctrl+Shift+T to test backend connection
-//
-// 2. If no audio is being sent to backend:
-//    - Check that microphone permission is granted
-//    - Use Ctrl+Shift+D to show audio processing statistics
-//    - Look for "Sending X bytes of VAD-detected speech to backend" in console
-//    - Verify VAD library loaded successfully (should see "VAD library loaded" message)
-//
-// 3. If VAD library fails to load:
-//    - Check internet connection (loads from CDN)
-//    - Check browser console for "Failed to load VAD library" errors
-//    - The app will try both CDN and local npm package as fallback
-//
-// 4. Debug commands in browser console:
-//    - window.miraApp.showAudioStats() - Show audio processing statistics
-//    - window.miraApp.testBackendConnection() - Test backend connectivity
-//    - window.miraApp.debugMode = true - Enable detailed logging
-//    - window.miraApp.audioProcessingStats - View raw audio stats
-//
 class MiraDesktop {
     constructor() {
         this.baseUrl = 'http://localhost:8000';
         this.clientId = 'Mira Desktop App';
         this.isConnected = false;
         this.isListening = false;
-        this.isRegistered = false; // Track registration status
-        this.isToggling = false; // Prevent multiple simultaneous toggle operations
-        this.isProcessingAudio = false; // Prevent overlapping audio processing
-        this._deregistrationAttempted = false; // Prevent multiple deregistration attempts
+        this.isRegistered = false;
+        this.isToggling = false;
+        this.isProcessingAudio = false;
+        this._deregistrationAttempted = false;
         this.transcriptions = [];
         this.connectionCheckInterval = null;
-        this.hasShownStartupDemo = false; // Track if startup demo transcriptions have been shown
 
         // Audio capture properties - VAD-based
-        this.micVAD = null; // Voice Activity Detection instance
+        this.micVAD = null;
         this.isRecording = false;
         this.audioProcessingStats = {
             totalAudioSent: 0,
@@ -70,7 +42,6 @@ class MiraDesktop {
     }
 
     initializeElements() {
-        // Get DOM elements
         this.micButton = document.getElementById('micButton');
         this.micIcon = document.getElementById('micIcon');
         this.micStatusText = document.getElementById('micStatusText');
@@ -84,16 +55,10 @@ class MiraDesktop {
     }
 
     setupEventListeners() {
-        // Microphone button click
         this.micButton.addEventListener('click', () => this.toggleListening());
-
-        // Clear transcriptions
         this.clearButton.addEventListener('click', () => this.clearTranscriptions());
-
-        // Retry connection
         this.retryButton.addEventListener('click', () => this.checkConnection());
 
-        // Keyboard shortcuts
         document.addEventListener('keydown', (e) => {
             if (e.key === ' ' && !e.target.matches('input, textarea')) {
                 e.preventDefault();
@@ -113,15 +78,11 @@ class MiraDesktop {
                 this.updateConnectionStatus(true);
                 this.hideConnectionBanner();
 
-                // Register client only if not already registered
                 if (!this.isRegistered) {
                     await this.registerClient();
                 }
 
-                // Update features from backend
                 this.updateFeatures(status.features);
-
-                // Update UI based on server status
                 this.updateServerStatus(status);
             } else {
                 throw new Error('Server responded with error');
@@ -129,8 +90,8 @@ class MiraDesktop {
         } catch (error) {
             console.log('Connection check failed:', error.message);
             this.isConnected = false;
-            this.isRegistered = false; // Reset registration status on disconnect
-            this._deregistrationAttempted = false; // Reset deregistration flag on disconnect
+            this.isRegistered = false;
+            this._deregistrationAttempted = false;
             this.updateConnectionStatus(false);
             this.showConnectionBanner();
         }
@@ -153,10 +114,10 @@ class MiraDesktop {
 
     async deregisterClient() {
         if (!this.isRegistered || this._deregistrationAttempted) {
-            return; // Already deregistered or deregistration already attempted
+            return;
         }
 
-        this._deregistrationAttempted = true; // Prevent multiple attempts
+        this._deregistrationAttempted = true;
 
         try {
             const response = await fetch(`${this.baseUrl}/deregister_client?client_id=${encodeURIComponent(this.clientId)}`, {
@@ -183,7 +144,6 @@ class MiraDesktop {
             return;
         }
 
-        // Prevent multiple simultaneous calls
         if (this.isToggling) {
             console.log('Toggle already in progress, ignoring');
             return;
@@ -193,11 +153,9 @@ class MiraDesktop {
         const originalButtonText = this.micStatusText.textContent;
 
         try {
-            // Provide immediate responsive UI feedback
             this.micButton.style.opacity = '0.7';
             this.micStatusText.textContent = this.isListening ? 'Stopping...' : 'Starting...';
 
-            // Add a slight delay to ensure UI update is visible
             await new Promise(resolve => setTimeout(resolve, 50));
 
             if (this.isListening) {
@@ -208,7 +166,6 @@ class MiraDesktop {
         } catch (error) {
             console.error('Error toggling listening:', error);
 
-            // Provide specific error messages to user
             let errorMessage = 'Error: ' + error.message;
             if (error.message.includes('Permission denied') || error.message.includes('NotAllowedError')) {
                 errorMessage = 'Microphone permission denied. Please allow microphone access and try again.';
@@ -219,14 +176,11 @@ class MiraDesktop {
             }
 
             this.showMessage(errorMessage, 'error');
-
-            // Reset UI state on error
             this.updateListeningUI(this.isListening);
         } finally {
             this.isToggling = false;
             this.micButton.style.opacity = '1';
 
-            // Only restore original text if we're not listening (success state will update it)
             if (!this.isListening && this.micStatusText.textContent.includes('...')) {
                 this.micStatusText.textContent = originalButtonText;
             }
@@ -237,17 +191,13 @@ class MiraDesktop {
         try {
             console.log('Starting listening service...');
 
-            // First enable the backend service
             const response = await fetch(`${this.baseUrl}/enable`, {
                 method: 'PATCH'
             });
 
             if (response.ok) {
                 console.log('Backend service enabled, starting audio capture...');
-
-                // Start audio capture
                 await this.startAudioCapture();
-
                 this.isListening = true;
                 this.updateListeningUI(true);
                 this.startTranscriptionPolling();
@@ -259,8 +209,7 @@ class MiraDesktop {
             }
         } catch (error) {
             console.error('Error starting listening:', error);
-            await this.stopAudioCapture(); // Clean up audio on error
-            // Ensure UI state is reset
+            await this.stopAudioCapture();
             this.isListening = false;
             this.updateListeningUI(false);
             throw error;
@@ -270,11 +219,8 @@ class MiraDesktop {
     async stopListening() {
         try {
             console.log('Stopping listening service...');
-
-            // Stop audio capture first
             await this.stopAudioCapture();
 
-            // Then disable the backend service
             const response = await fetch(`${this.baseUrl}/disable`, {
                 method: 'PATCH'
             });
@@ -291,7 +237,6 @@ class MiraDesktop {
             }
         } catch (error) {
             console.error('Error stopping listening:', error);
-            // Still update UI even if backend call fails
             this.isListening = false;
             this.updateListeningUI(false);
             this.stopTranscriptionPolling();
@@ -313,7 +258,6 @@ class MiraDesktop {
                 throw new Error(`VAD library failed to load: ${window.vadLibraryLoadError}`);
             }
 
-            // Wait 100ms before checking again
             await new Promise(resolve => setTimeout(resolve, 100));
         }
 
@@ -323,11 +267,8 @@ class MiraDesktop {
     async startAudioCapture() {
         try {
             console.log('Requesting microphone access...');
-
-            // Wait for VAD library to load with timeout
             await this.waitForVADLibrary();
 
-            // Check if VAD library is available, with detailed error reporting
             if (typeof vad === 'undefined') {
                 console.error('VAD library not found. Library loading may have failed.');
                 const errorMsg = window.vadLibraryLoadError || 'Voice Activity Detection library is not available. Please refresh the page and try again.';
@@ -342,25 +283,19 @@ class MiraDesktop {
             const { MicVAD } = vad;
             console.log('VAD library loaded successfully, setting up audio processing...');
 
-            // Initialize VAD with custom options for 0.6s silence detection
             const sampleRate = 16000;
-            const frameSamples = 1536; // Default frame size
-            // Calculate redemption frames for ~0.6s silence detection
-            const targetSilenceMs = 580; // Slightly less than 0.6s for better responsiveness
+            const frameSamples = 1536;
+            const targetSilenceMs = 580;
             const redemptionFrames = Math.max(1, Math.round((targetSilenceMs * sampleRate) / (frameSamples * 1000)));
 
             console.log(`Setting up VAD with ${redemptionFrames} redemption frames for ${targetSilenceMs}ms silence detection`);
 
-            // Add timeout for VAD initialization
             const vadInitPromise = MicVAD.new({
-                // VAD model options
-                model: 'legacy', // Use legacy model for better compatibility
+                model: 'legacy',
 
-                // Speech detection thresholds - more sensitive settings
                 positiveSpeechThreshold: 0.3, // Lower threshold for better detection
                 negativeSpeechThreshold: 0.25,
 
-                // Silence detection - customized for ~0.6s like terminal-client
                 redemptionFrames: redemptionFrames,
 
                 // Audio quality settings
@@ -374,10 +309,9 @@ class MiraDesktop {
                     echoCancellation: true,
                     noiseSuppression: true,
                     autoGainControl: true,
-                    channelCount: 1 // Ensure mono audio
+                    channelCount: 1
                 },
 
-                // Callbacks for VAD events
                 onSpeechStart: () => {
                     console.log('VAD: Speech started');
                     this.updateVADStatus('speaking');
@@ -408,7 +342,6 @@ class MiraDesktop {
                 },
 
                 onFrameProcessed: (probabilities) => {
-                    // Optional: Could show real-time speech probability for debugging
                     if (probabilities && probabilities.isSpeech > 0.5) {
                         console.log('VAD probability:', probabilities.isSpeech.toFixed(3));
                     }
@@ -420,16 +353,12 @@ class MiraDesktop {
                 }
             });
 
-            // Set a timeout for VAD initialization
             const timeoutPromise = new Promise((_, reject) => {
                 setTimeout(() => reject(new Error('VAD initialization timeout after 10 seconds')), 10000);
             });
 
             this.micVAD = await Promise.race([vadInitPromise, timeoutPromise]);
-
             console.log('VAD initialized successfully, starting...');
-
-            // Start VAD listening with error handling
             await this.micVAD.start();
             this.isRecording = true;
             this.updateVADStatus('waiting');
@@ -438,7 +367,6 @@ class MiraDesktop {
         } catch (error) {
             console.error('Error starting VAD audio capture:', error);
 
-            // Provide more specific error messages
             let errorMessage = 'Failed to initialize voice activity detection.';
             if (error.message.includes('Permission denied') || error.name === 'NotAllowedError') {
                 errorMessage = 'Microphone permission denied. Please allow microphone access and try again.';
@@ -471,13 +399,11 @@ class MiraDesktop {
         try {
             this.isRecording = false;
 
-            // Clean up VAD resources
             if (this.micVAD) {
                 this.micVAD.destroy();
                 this.micVAD = null;
             }
 
-            // Reset VAD status
             this.updateVADStatus('stopped');
 
             console.log('VAD audio capture stopped');
@@ -510,7 +436,6 @@ class MiraDesktop {
         }
 
         try {
-            // Validate audio data
             if (!(audioFloat32Array instanceof Float32Array)) {
                 console.error('Invalid audio data type:', typeof audioFloat32Array);
                 throw new Error('Invalid audio data format');
@@ -531,11 +456,9 @@ class MiraDesktop {
                 }
             }
 
-            // Validate that we have meaningful audio content
             const validSampleRatio = validSamples / audioFloat32Array.length;
             if (validSampleRatio < 0.001) {
                 console.warn('Audio appears to be mostly silence, validSamples:', validSamples, 'of', audioFloat32Array.length);
-                // Still send it, but log the warning
             } else {
                 console.log(`Audio validation: ${validSamples}/${audioFloat32Array.length} non-silent samples (${(validSampleRatio * 100).toFixed(1)}%)`);
             }
@@ -549,9 +472,8 @@ class MiraDesktop {
                 throw new Error('Backend connection lost');
             }
 
-            // Send to backend with enhanced error handling
             const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 second timeout
+            const timeoutId = setTimeout(() => controller.abort(), 15000);
 
             const response = await fetch(`${this.baseUrl}/register_interaction`, {
                 method: 'POST',
@@ -561,8 +483,7 @@ class MiraDesktop {
                 },
                 body: audioBytes,
                 signal: controller.signal,
-                // Performance optimizations
-                keepalive: false, // Changed to false to avoid potential issues
+                keepalive: false,
                 cache: 'no-cache'
             });
 
@@ -588,9 +509,7 @@ class MiraDesktop {
                     }
                 } catch (jsonError) {
                     console.warn('Response was OK but failed to parse JSON:', jsonError);
-                    // Still consider this a success since the audio was sent
                 }
-                // The transcription polling will pick up any new interactions
             } else {
                 this.audioProcessingStats.failedRequests++;
                 let errorText = 'Unknown error';
@@ -602,34 +521,30 @@ class MiraDesktop {
                 const errorMessage = `HTTP ${response.status}: ${response.statusText}`;
                 console.error('Failed to process VAD audio:', errorMessage, errorText);
 
-                // Show user-friendly error message
                 if (response.status === 404) {
-                    this.showMessage('Backend endpoint not found. Please check if the backend is running correctly.');
+                    this.showMessage('Backend endpoint not found. Please check if the backend is running correctly.', 'error');
                 } else if (response.status >= 500) {
-                    this.showMessage('Backend server error. Please try again.');
+                    this.showMessage('Backend server error. Please try again.', 'error');
                 } else {
-                    this.showMessage(`Failed to process audio: ${errorMessage}`);
+                    this.showMessage(`Failed to process audio: ${errorMessage}`, 'error');
                 }
             }
 
         } catch (error) {
             console.error('Error sending VAD audio to backend:', error);
 
-            // Provide specific error messages
             if (error.name === 'AbortError') {
-                this.showMessage('Audio processing timed out. Please try speaking again.');
+                this.showMessage('Audio processing timed out. Please try speaking again.', 'error');
             } else if (error.message.includes('Failed to fetch') || error.message.includes('network')) {
-                this.showMessage('Network error. Please check your connection to the backend.');
+                this.showMessage('Network error. Please check your connection to the backend.', 'error');
             } else if (error.message.includes('Backend connection lost')) {
                 this.showMessage('Connection to backend lost. Reconnecting...');
-                // Trigger reconnection check
                 this.checkConnection();
             } else {
-                this.showMessage('Error processing audio: ' + error.message);
+                this.showMessage('Error processing audio: ' + error.message, 'error');
             }
         } finally {
             this.isProcessingAudio = false;
-            // Always return to waiting state unless we're no longer listening
             if (this.isListening) {
                 this.updateVADStatus('waiting');
             }
@@ -637,7 +552,6 @@ class MiraDesktop {
     }
 
     updateVADStatus(status) {
-        // Update UI to show VAD status
         const statusMessages = {
             'waiting': 'Waiting for speech...',
             'stopping': "Disabling Mira",
@@ -646,7 +560,6 @@ class MiraDesktop {
             'stopped': 'VAD stopped'
         };
 
-        // Update microphone status text if listening
         if (this.isListening && this.micStatusText) {
             const message = statusMessages[status] || 'Unknown status';
             // Only update if not showing the main listening message
@@ -663,11 +576,8 @@ class MiraDesktop {
     updateFeatures(features) {
         const featuresList = document.getElementById('featuresList');
         if (!featuresList || !features) return;
-
-        // Clear existing features
         featuresList.innerHTML = '';
 
-        // Map features to display names, descriptions and icons
         const featureMap = {
             'advanced_nlp': {
                 name: 'Advanced NLP Processing',
@@ -691,7 +601,6 @@ class MiraDesktop {
             }
         };
 
-        // Add each enabled feature
         Object.keys(features).forEach(key => {
             if (features[key] && featureMap[key]) {
                 const featureItem = document.createElement('div');
@@ -740,7 +649,6 @@ class MiraDesktop {
             this.statusDot.className = 'status-dot listening';
             this.statusText.textContent = 'Listening';
             this.micStatusText.textContent = 'Listening... Click to stop';
-            // Replace microphone SVG with stop icon
             this.micIcon.innerHTML = `
                 <svg class="mic-svg" viewBox="0 0 24 24" fill="currentColor">
                     <path d="M6 6h12v12H6z"/>
@@ -751,7 +659,6 @@ class MiraDesktop {
             this.statusDot.className = 'status-dot connected';
             this.statusText.textContent = 'Connected';
             this.micStatusText.textContent = 'Click to start listening';
-            // Replace with microphone SVG
             this.micIcon.innerHTML = `
                 <svg class="mic-svg" viewBox="0 0 24 24" fill="currentColor">
                     <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5.3-3c0 3-2.54 5.1-5.3 5.1S6.7 14 6.7 11H5c0 3.41 2.72 6.23 6 6.72V21h2v-3.28c3.28-.48 6-3.3 6-6.72h-1.7z"/>
@@ -761,11 +668,9 @@ class MiraDesktop {
     }
 
     startTranscriptionPolling() {
-        // Stop any existing polling first to prevent multiple intervals
         this.stopTranscriptionPolling();
 
         console.log('Starting transcription polling...');
-        // Poll for new transcriptions from the backend
         this.transcriptionInterval = setInterval(async () => {
             if (this.isListening && this.isConnected) {
                 await this.fetchLatestTranscriptions();
@@ -773,7 +678,7 @@ class MiraDesktop {
                 console.log('Stopping polling - not listening or not connected');
                 this.stopTranscriptionPolling();
             }
-        }, 1000); // Poll every 1 second for faster UI updates
+        }, 1000);
     }
 
     async fetchLatestTranscriptions() {
@@ -782,36 +687,13 @@ class MiraDesktop {
             if (response.ok) {
                 const interactions = await response.json();
 
-                // Check for new interactions since last check
                 interactions.forEach(interaction => {
-                    // Use more robust ID comparison - ensure both are strings
                     const interactionId = String(interaction.id);
                     const existingTranscription = this.transcriptions.find(t => String(t.id) === interactionId);
 
                     if (!existingTranscription) {
-                        // Only add real transcriptions, not demo/test data on subsequent starts
-                        // Skip demo transcriptions if we've already shown startup demo
-                        const isTestData = interaction.text && (
-                            interaction.text.includes('test transcription') ||
-                            interaction.text.includes('example') ||
-                            interaction.text.includes('demo') ||
-                            interaction.text.includes('Mira is listening') ||
-                            interaction.text.includes('Hello, this is a test') ||
-                            interaction.text.includes('Voice recognition is working') ||
-                            interaction.text.includes('The microphone is picking up') ||
-                            interaction.text.includes('Audio processing is functioning') ||
-                            interaction.text.includes('This is speaker recognition test')
-                        );
-
-                        if (!isTestData || !this.hasShownStartupDemo) {
-                            console.log(`Adding new transcription: ${interactionId}`);
-                            this.addTranscriptionFromInteraction(interaction);
-                            if (isTestData) {
-                                this.hasShownStartupDemo = true;
-                            }
-                        } else {
-                            console.log(`Skipping test data: ${interaction.text.substring(0, 50)}...`);
-                        }
+                        console.log(`Adding new transcription: ${interactionId}`);
+                        this.addTranscriptionFromInteraction(interaction);
                     } else {
                         console.log(`Skipping existing transcription: ${interactionId}`);
                     }
@@ -823,13 +705,9 @@ class MiraDesktop {
     }
 
     async addTranscriptionFromInteraction(interaction) {
-        // Parse timestamp with timezone offset and convert to local date/time string
-        // Handles formats like "2025-07-30 18:06:58.307+05:30"
         let timestamp = interaction.timestamp;
         try {
-            // Replace space with 'T' for ISO compatibility if needed
             let isoString = timestamp.replace(' ', 'T');
-            // If no 'Z' or timezone, assume UTC
             if (!/[zZ]|[+-]\d{2}:\d{2}$/.test(isoString)) {
                 isoString += 'Z';
             }
@@ -866,13 +744,11 @@ class MiraDesktop {
 
         this.transcriptions.push(transcription);
 
-        // Remove empty state if present
         const emptyState = this.transcriptionContent.querySelector('.empty-state');
         if (emptyState) {
             emptyState.remove();
         }
 
-        // Create transcription element
         const transcriptionElement = this.createTranscriptionElement(transcription);
         this.transcriptionContent.appendChild(transcriptionElement);
 
@@ -881,7 +757,6 @@ class MiraDesktop {
     }
 
     stopTranscriptionPolling() {
-        // Stop any ongoing transcription polling
         if (this.transcriptionInterval) {
             console.log('Stopping transcription polling...');
             clearInterval(this.transcriptionInterval);
@@ -892,10 +767,7 @@ class MiraDesktop {
     createTranscriptionElement(transcription) {
         const element = document.createElement('div');
         element.className = 'transcription-item';
-
-        // Get speaker color
         const speakerColor = this.getSpeakerColor(transcription.speaker);
-
         element.style.borderLeftColor = speakerColor.border;
         element.style.backgroundColor = speakerColor.background;
 
@@ -910,23 +782,19 @@ class MiraDesktop {
     }
 
     getSpeakerColor(speaker) {
-        // Create a mapping of speakers to different shades of green
         const speakerIndex = parseInt(speaker.index) || this.getOrAssignSpeakerIndex(speaker.id);
 
-        // Different shades of green for different speakers
         const greenShades = [
-            { background: '#f0fffa', border: '#00ff88', text: '#00cc6a' }, // Speaker 1 - Light mint
-            { background: '#e6fffa', border: '#00e074', text: '#00b359' }, // Speaker 2 - Slightly darker
-            { background: '#dcfdf7', border: '#00d15a', text: '#009944' }, // Speaker 3 - Even darker
-            { background: '#d1fae5', border: '#00c249', text: '#007f30' }, // Speaker 4 - Forest green
+            { background: '#f0fffa', border: '#00ff88', text: '#00cc6a' },
+            { background: '#e6fffa', border: '#00e074', text: '#00b359' },
+            { background: '#dcfdf7', border: '#00d15a', text: '#009944' },
+            { background: '#d1fae5', border: '#00c249', text: '#007f30' },
         ];
 
-        // Cycle through colors if more speakers than available shades
         return greenShades[speakerIndex % greenShades.length];
     }
 
     getOrAssignSpeakerIndex(speaker) {
-        // Keep track of speaker assignments to maintain consistent colors
         if (!this.speakerIndexMap) {
             this.speakerIndexMap = new Map();
             this.nextSpeakerIndex = 0;
@@ -942,7 +810,6 @@ class MiraDesktop {
 
     async clearTranscriptions() {
         try {
-            // Call backend API to clear all interactions from database
             const response = await fetch(`${this.baseUrl}/interactions`, {
                 method: 'DELETE'
             });
@@ -951,7 +818,6 @@ class MiraDesktop {
                 const result = await response.json();
                 console.log('Database cleared:', result);
 
-                // Clear local transcriptions
                 this.transcriptions = [];
                 this.transcriptionContent.innerHTML = `
                     <div class="empty-state">
@@ -961,15 +827,14 @@ class MiraDesktop {
                     </div>
                 `;
 
-                // Show success message briefly
                 this.showMessage(`Cleared ${result.deleted_count || 0} interactions from database`);
             } else {
                 console.error('Failed to clear database:', response.status, response.statusText);
-                this.showMessage('Failed to clear interactions from database');
+                this.showMessage('Failed to clear interactions from database', 'error');
             }
         } catch (error) {
             console.error('Error clearing interactions:', error);
-            this.showMessage('Error clearing interactions: ' + error.message);
+            this.showMessage('Error clearing interactions: ' + error.message, 'error');
         }
     }
 
@@ -1009,25 +874,26 @@ class MiraDesktop {
         toast.textContent = message;
         document.body.appendChild(toast);
 
-        // Animate in
         setTimeout(() => {
             toast.style.opacity = '1';
             toast.style.transform = 'translateX(0)';
         }, 10);
 
-        // Auto-remove after delay
-        const duration = Math.max(3000, Math.min(8000, message.length * 50)); // 3-8 seconds based on length
-        setTimeout(() => {
-            toast.style.opacity = '0';
-            toast.style.transform = 'translateX(100%)';
-            setTimeout(() => {
-                if (toast.parentNode) {
-                    toast.parentNode.removeChild(toast);
-                }
-            }, 300);
-        }, duration);
 
-        // Allow manual dismiss on click
+        if (type !== 'error') {
+            const duration = Math.max(3000, Math.min(8000, message.length * 50));
+            setTimeout(() => {
+                toast.style.opacity = '0';
+                toast.style.transform = 'translateX(100%)';
+                setTimeout(() => {
+                    if (toast.parentNode) {
+                        toast.parentNode.removeChild(toast);
+                    }
+                }, 300);
+            }, duration);
+        }
+
+
         toast.addEventListener('click', () => {
             toast.style.opacity = '0';
             toast.style.transform = 'translateX(100%)';
@@ -1040,16 +906,13 @@ class MiraDesktop {
     }
 
     startConnectionCheck() {
-        // Initial connection check
         this.checkConnection();
 
-        // Check connection every 5 seconds
         this.connectionCheckInterval = setInterval(() => {
             this.checkConnection();
         }, 1000);
     }
 
-    // Debug method to show audio processing statistics
     showAudioStats() {
         const stats = this.audioProcessingStats;
         console.log('📊 Audio Processing Statistics:');
@@ -1068,12 +931,10 @@ class MiraDesktop {
         return stats;
     }
 
-    // Test backend connectivity with detailed reporting
     async testBackendConnection() {
         console.log('🔗 Testing backend connection...');
 
         try {
-            // Test basic connection
             const startTime = Date.now();
             const response = await fetch(`${this.baseUrl}/`, {
                 method: 'GET',
@@ -1088,7 +949,6 @@ class MiraDesktop {
                 const data = await response.json();
                 console.log('- Backend response:', data);
 
-                // Test the register_interaction endpoint with dummy data
                 console.log('🎵 Testing audio endpoint...');
                 const dummyAudio = new Uint8Array(1600); // 0.1s of silence at 16kHz
 
@@ -1124,16 +984,13 @@ class MiraDesktop {
         }
     }
 
-    // Cleanup method for when the app is closing
     async cleanup() {
         console.log('Cleaning up Mira Desktop App...');
 
-        // Stop VAD audio capture if active
         if (this.isRecording && this.micVAD) {
             await this.stopAudioCapture();
         }
 
-        // Clear intervals
         if (this.connectionCheckInterval) {
             clearInterval(this.connectionCheckInterval);
         }
@@ -1142,7 +999,6 @@ class MiraDesktop {
             clearInterval(this.transcriptionInterval);
         }
 
-        // Deregister client properly - make it synchronous for cleanup
         if (this.isRegistered) {
             try {
                 await this.deregisterClient();
@@ -1153,11 +1009,9 @@ class MiraDesktop {
     }
 }
 
-// Initialize the application when DOM is loaded
 document.addEventListener('DOMContentLoaded', () => {
     window.miraApp = new MiraDesktop();
 
-    // Handle cleanup signal from main process
     if (window.electronAPI) {
         window.electronAPI.onAppClosing(() => {
             if (window.miraApp) {
@@ -1166,17 +1020,14 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // Handle app cleanup on window close - simplified to prevent multiple deregistration attempts
     window.addEventListener('beforeunload', async () => {
         if (window.miraApp && window.miraApp.isRegistered && !window.miraApp._deregistrationAttempted) {
-            // Use navigator.sendBeacon for reliable cleanup during page unload
             const url = `${window.miraApp.baseUrl}/deregister_client?client_id=${encodeURIComponent(window.miraApp.clientId)}`;
             navigator.sendBeacon(url, '');
             window.miraApp._deregistrationAttempted = true;
         }
     });
 
-    // Also handle when the Electron app is about to quit - simplified to prevent duplicates
     window.addEventListener('unload', () => {
         if (window.miraApp && window.miraApp.isRegistered && !window.miraApp._deregistrationAttempted) {
             const url = `${window.miraApp.baseUrl}/deregister_client?client_id=${encodeURIComponent(window.miraApp.clientId)}`;
@@ -1186,9 +1037,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 });
 
-// Handle keyboard shortcuts globally
 document.addEventListener('keydown', (e) => {
-    // Space bar to toggle listening (when not in input field)
     if (e.code === 'Space' && !e.target.matches('input, textarea, [contenteditable]')) {
         e.preventDefault();
         if (window.miraApp && window.miraApp.isConnected) {
@@ -1196,7 +1045,6 @@ document.addEventListener('keydown', (e) => {
         }
     }
 
-    // Debug shortcuts (Ctrl+Shift+D for debug stats, Ctrl+Shift+M for debug mode toggle)
     if (e.ctrlKey && e.shiftKey && e.code === 'KeyD') {
         e.preventDefault();
         if (window.miraApp) {
@@ -1213,7 +1061,6 @@ document.addEventListener('keydown', (e) => {
         }
     }
 
-    // Backend connection test (Ctrl+Shift+T)
     if (e.ctrlKey && e.shiftKey && e.code === 'KeyT') {
         e.preventDefault();
         if (window.miraApp) {
