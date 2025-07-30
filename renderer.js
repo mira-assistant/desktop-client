@@ -821,8 +821,18 @@ class MiraDesktop {
     }
 
     addTranscriptionFromInteraction(interaction) {
-        const timestamp = new Date(interaction.timestamp).toLocaleTimeString();
-        const speaker = interaction.speaker || interaction.user_id || 'Unknown'; // Handle different data formats
+        // Convert UTC timestamp to local date and time string
+        const dateObj = new Date(interaction.timestamp);
+        const timestamp = dateObj.toLocaleString(undefined, {
+            year: 'numeric',
+            month: 'short',
+            day: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit'
+        });
+
+        const speaker = interaction.speaker_id || 'Unknown';
         const transcription = {
             text: interaction.text,
             timestamp: timestamp,
@@ -861,40 +871,6 @@ class MiraDesktop {
             console.log('Stopping transcription polling...');
             clearInterval(this.transcriptionInterval);
             this.transcriptionInterval = null;
-        }
-    }
-
-    addTranscription(text, timestamp = null, speaker = null) {
-        if (!timestamp) {
-            timestamp = new Date().toLocaleTimeString();
-        }
-        if (!speaker) {
-            speaker = 'Unknown';
-        }
-
-        const transcription = { text, timestamp, speaker, id: Date.now() };
-        this.transcriptions.push(transcription);
-
-        // Remove empty state if present
-        const emptyState = this.transcriptionContent.querySelector('.empty-state');
-        if (emptyState) {
-            emptyState.remove();
-        }
-
-        // Create transcription element
-        const transcriptionElement = this.createTranscriptionElement(transcription);
-        this.transcriptionContent.appendChild(transcriptionElement);
-
-        // Scroll to bottom
-        this.transcriptionContent.scrollTop = this.transcriptionContent.scrollHeight;
-
-        // Limit number of transcriptions displayed
-        if (this.transcriptions.length > 50) {
-            this.transcriptions.shift();
-            const firstElement = this.transcriptionContent.firstElementChild;
-            if (firstElement && !firstElement.classList.contains('empty-state')) {
-                firstElement.remove();
-            }
         }
     }
 
