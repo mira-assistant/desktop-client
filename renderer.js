@@ -2,7 +2,7 @@
 //
 // Troubleshooting Guide:
 // =====================
-// 
+//
 // 1. If button is laggy or unresponsive:
 //    - Check browser console for errors
 //    - Try Ctrl+Shift+M to toggle debug mode for detailed logging
@@ -49,14 +49,14 @@ class MiraDesktop {
             failedRequests: 0,
             averageAudioDuration: 0
         };
-        
+
         // Debug mode (can be enabled via console: window.miraApp.debugMode = true)
         this.debugMode = false;
 
         this.initializeElements();
         this.setupEventListeners();
         this.startConnectionCheck();
-        
+
         console.log('Mira Desktop initialized - debug info:');
         console.log('- Base URL:', this.baseUrl);
         console.log('- Client ID:', this.clientId);
@@ -206,7 +206,7 @@ class MiraDesktop {
             }
         } catch (error) {
             console.error('Error toggling listening:', error);
-            
+
             // Provide specific error messages to user
             let errorMessage = 'Error: ' + error.message;
             if (error.message.includes('Permission denied') || error.message.includes('NotAllowedError')) {
@@ -216,15 +216,15 @@ class MiraDesktop {
             } else if (error.message.includes('timeout')) {
                 errorMessage = 'Operation timed out. Please try again.';
             }
-            
+
             this.showMessage(errorMessage, 'error');
-            
+
             // Reset UI state on error
             this.updateListeningUI(this.isListening);
         } finally {
             this.isToggling = false;
             this.micButton.style.opacity = '1';
-            
+
             // Only restore original text if we're not listening (success state will update it)
             if (!this.isListening && this.micStatusText.textContent.includes('...')) {
                 this.micStatusText.textContent = originalButtonText;
@@ -301,21 +301,21 @@ class MiraDesktop {
     async waitForVADLibrary(timeout = 15000) {
         console.log('Waiting for VAD library to load...');
         const startTime = Date.now();
-        
+
         while (Date.now() - startTime < timeout) {
             if (window.vadLibraryLoaded) {
                 console.log('VAD library ready');
                 return;
             }
-            
+
             if (window.vadLibraryLoadError) {
                 throw new Error(`VAD library failed to load: ${window.vadLibraryLoadError}`);
             }
-            
+
             // Wait 100ms before checking again
             await new Promise(resolve => setTimeout(resolve, 100));
         }
-        
+
         throw new Error('Timeout waiting for VAD library to load');
     }
 
@@ -332,12 +332,12 @@ class MiraDesktop {
                 const errorMsg = window.vadLibraryLoadError || 'Voice Activity Detection library is not available. Please refresh the page and try again.';
                 throw new Error(errorMsg);
             }
-            
+
             if (!vad.MicVAD) {
                 console.error('MicVAD not found in VAD library object:', Object.keys(vad));
                 throw new Error('Voice Activity Detection module is incomplete. Please refresh the page and try again.');
             }
-            
+
             const { MicVAD } = vad;
             console.log('VAD library loaded successfully, setting up audio processing...');
 
@@ -347,26 +347,26 @@ class MiraDesktop {
             // Calculate redemption frames for ~0.6s silence detection
             const targetSilenceMs = 580; // Slightly less than 0.6s for better responsiveness
             const redemptionFrames = Math.max(1, Math.round((targetSilenceMs * sampleRate) / (frameSamples * 1000)));
-            
+
             console.log(`Setting up VAD with ${redemptionFrames} redemption frames for ${targetSilenceMs}ms silence detection`);
 
             // Add timeout for VAD initialization
             const vadInitPromise = MicVAD.new({
                 // VAD model options
                 model: 'legacy', // Use legacy model for better compatibility
-                
+
                 // Speech detection thresholds - more sensitive settings
                 positiveSpeechThreshold: 0.3, // Lower threshold for better detection
                 negativeSpeechThreshold: 0.25,
-                
+
                 // Silence detection - customized for ~0.6s like terminal-client
                 redemptionFrames: redemptionFrames,
-                
+
                 // Audio quality settings
                 frameSamples: frameSamples,
                 preSpeechPadFrames: 1, // Reduced for faster response
                 minSpeechFrames: 3, // Reduced minimum to avoid missing short utterances
-                
+
                 // Enhanced audio constraints for better quality
                 additionalAudioConstraints: {
                     sampleRate: sampleRate,
@@ -375,19 +375,19 @@ class MiraDesktop {
                     autoGainControl: true,
                     channelCount: 1 // Ensure mono audio
                 },
-                
+
                 // Callbacks for VAD events
                 onSpeechStart: () => {
                     console.log('VAD: Speech started');
                     this.updateVADStatus('speaking');
                 },
-                
+
                 onSpeechEnd: (audio) => {
                     try {
                         const durationSeconds = audio.length / sampleRate;
                         console.log(`VAD: Speech ended, processing ${durationSeconds.toFixed(2)}s of audio (${audio.length} samples)`);
                         this.updateVADStatus('processing');
-                        
+
                         // Validate audio data before sending
                         if (audio && audio.length > 0) {
                             this.sendVADAudioToBackend(audio);
@@ -400,19 +400,19 @@ class MiraDesktop {
                         this.updateVADStatus('waiting');
                     }
                 },
-                
+
                 onVADMisfire: () => {
                     console.log('VAD: Speech detected but too short (misfire)');
                     this.updateVADStatus('waiting');
                 },
-                
+
                 onFrameProcessed: (probabilities) => {
                     // Optional: Could show real-time speech probability for debugging
-                    // if (probabilities && probabilities.isSpeech > 0.5) {
-                    //     console.log('VAD probability:', probabilities.isSpeech.toFixed(3));
-                    // }
+                    if (probabilities && probabilities.isSpeech > 0.5) {
+                        console.log('VAD probability:', probabilities.isSpeech.toFixed(3));
+                    }
                 },
-                
+
                 onError: (error) => {
                     console.error('VAD: Internal error:', error);
                     this.showMessage('Voice detection error: ' + error.message, 'error');
@@ -427,7 +427,7 @@ class MiraDesktop {
             this.micVAD = await Promise.race([vadInitPromise, timeoutPromise]);
 
             console.log('VAD initialized successfully, starting...');
-            
+
             // Start VAD listening with error handling
             await this.micVAD.start();
             this.isRecording = true;
@@ -436,7 +436,7 @@ class MiraDesktop {
             console.log('VAD-based audio capture started successfully');
         } catch (error) {
             console.error('Error starting VAD audio capture:', error);
-            
+
             // Provide more specific error messages
             let errorMessage = 'Failed to initialize voice activity detection.';
             if (error.message.includes('Permission denied') || error.name === 'NotAllowedError') {
@@ -452,7 +452,7 @@ class MiraDesktop {
             } else {
                 errorMessage = `Voice detection error: ${error.message}`;
             }
-            
+
             console.error('Audio capture error details:', {
                 message: error.message,
                 name: error.name,
@@ -460,7 +460,7 @@ class MiraDesktop {
                 vadLibraryLoaded: window.vadLibraryLoaded,
                 vadLibraryLoadError: window.vadLibraryLoadError
             });
-            
+
             this.showMessage(errorMessage, 'error');
             throw error;
         }
@@ -490,7 +490,7 @@ class MiraDesktop {
             console.warn('sendVADAudioToBackend: Empty or invalid audio data');
             return;
         }
-        
+
         if (this.isProcessingAudio) {
             console.warn('sendVADAudioToBackend: Already processing audio, skipping');
             return;
@@ -498,7 +498,7 @@ class MiraDesktop {
 
         this.isProcessingAudio = true;
         console.log(`sendVADAudioToBackend: Processing ${audioFloat32Array.length} audio samples`);
-        
+
         if (this.debugMode) {
             console.log('DEBUG: Audio sample stats:');
             console.log('- Sample rate: 16000 Hz');
@@ -518,12 +518,12 @@ class MiraDesktop {
             // Convert Float32Array to 16-bit PCM for backend compatibility
             const audioInt16 = new Int16Array(audioFloat32Array.length);
             let validSamples = 0;
-            
+
             for (let i = 0; i < audioFloat32Array.length; i++) {
                 // Clamp and convert to 16-bit signed integer
                 const sample = Math.max(-1, Math.min(1, audioFloat32Array[i]));
                 audioInt16[i] = Math.round(sample * 32767);
-                
+
                 // Count non-zero samples to validate audio content
                 if (Math.abs(sample) > 0.001) {
                     validSamples++;
@@ -571,10 +571,10 @@ class MiraDesktop {
                 this.audioProcessingStats.successfulRequests++;
                 this.audioProcessingStats.totalAudioSent++;
                 this.audioProcessingStats.totalAudioBytes += audioBytes.length;
-                this.audioProcessingStats.averageAudioDuration = 
-                    ((this.audioProcessingStats.averageAudioDuration * (this.audioProcessingStats.totalAudioSent - 1)) + 
+                this.audioProcessingStats.averageAudioDuration =
+                    ((this.audioProcessingStats.averageAudioDuration * (this.audioProcessingStats.totalAudioSent - 1)) +
                      (audioFloat32Array.length / 16000)) / this.audioProcessingStats.totalAudioSent;
-                
+
                 try {
                     const result = await response.json();
                     if (result.message !== "Duplicate transcription skipped") {
@@ -600,7 +600,7 @@ class MiraDesktop {
                 }
                 const errorMessage = `HTTP ${response.status}: ${response.statusText}`;
                 console.error('Failed to process VAD audio:', errorMessage, errorText);
-                
+
                 // Show user-friendly error message
                 if (response.status === 404) {
                     this.showMessage('Backend endpoint not found. Please check if the backend is running correctly.');
@@ -613,7 +613,7 @@ class MiraDesktop {
 
         } catch (error) {
             console.error('Error sending VAD audio to backend:', error);
-            
+
             // Provide specific error messages
             if (error.name === 'AbortError') {
                 this.showMessage('Audio processing timed out. Please try speaking again.');
@@ -643,7 +643,7 @@ class MiraDesktop {
             'processing': 'Processing speech...',
             'stopped': 'VAD stopped'
         };
-        
+
         // Update microphone status text if listening
         if (this.isListening && this.micStatusText) {
             const message = statusMessages[status] || 'Unknown status';
@@ -654,7 +654,7 @@ class MiraDesktop {
                 this.micStatusText.textContent = 'Listening... Click to stop';
             }
         }
-        
+
         console.log(`VAD Status: ${statusMessages[status] || status}`);
     }
 
@@ -994,7 +994,7 @@ class MiraDesktop {
 
     showMessage(message, type = 'info') {
         console.log('Message:', message);
-        
+
         // Create a simple toast notification for user feedback
         const toast = document.createElement('div');
         toast.className = `toast toast-${type}`;
@@ -1016,16 +1016,16 @@ class MiraDesktop {
             transition: all 0.3s ease;
             word-wrap: break-word;
         `;
-        
+
         toast.textContent = message;
         document.body.appendChild(toast);
-        
+
         // Animate in
         setTimeout(() => {
             toast.style.opacity = '1';
             toast.style.transform = 'translateX(0)';
         }, 10);
-        
+
         // Auto-remove after delay
         const duration = Math.max(3000, Math.min(8000, message.length * 50)); // 3-8 seconds based on length
         setTimeout(() => {
@@ -1037,7 +1037,7 @@ class MiraDesktop {
                 }
             }, 300);
         }, duration);
-        
+
         // Allow manual dismiss on click
         toast.addEventListener('click', () => {
             toast.style.opacity = '0';
@@ -1059,7 +1059,7 @@ class MiraDesktop {
             this.checkConnection();
         }, 5000);
     }
-    
+
     // Debug method to show audio processing statistics
     showAudioStats() {
         const stats = this.audioProcessingStats;
@@ -1072,17 +1072,17 @@ class MiraDesktop {
         console.log(`- Average audio duration: ${stats.averageAudioDuration.toFixed(2)}s`);
         console.log(`- VAD status: ${this.isRecording ? 'Recording' : 'Stopped'}`);
         console.log(`- Backend connection: ${this.isConnected ? 'Connected' : 'Disconnected'}`);
-        
+
         // Show in UI as well
         this.showMessage(`Audio Stats: ${stats.totalAudioSent} segments sent, ${stats.successfulRequests} successful, ${stats.failedRequests} failed`, 'info');
-        
+
         return stats;
     }
-    
+
     // Test backend connectivity with detailed reporting
     async testBackendConnection() {
         console.log('🔗 Testing backend connection...');
-        
+
         try {
             // Test basic connection
             const startTime = Date.now();
@@ -1091,18 +1091,18 @@ class MiraDesktop {
                 cache: 'no-cache'
             });
             const responseTime = Date.now() - startTime;
-            
+
             console.log(`- Response time: ${responseTime}ms`);
             console.log(`- Status: ${response.status} ${response.statusText}`);
-            
+
             if (response.ok) {
                 const data = await response.json();
                 console.log('- Backend response:', data);
-                
+
                 // Test the register_interaction endpoint with dummy data
                 console.log('🎵 Testing audio endpoint...');
                 const dummyAudio = new Uint8Array(1600); // 0.1s of silence at 16kHz
-                
+
                 const audioTestStart = Date.now();
                 const audioResponse = await fetch(`${this.baseUrl}/register_interaction`, {
                     method: 'POST',
@@ -1112,10 +1112,10 @@ class MiraDesktop {
                     body: dummyAudio
                 });
                 const audioResponseTime = Date.now() - audioTestStart;
-                
+
                 console.log(`- Audio endpoint response time: ${audioResponseTime}ms`);
                 console.log(`- Audio endpoint status: ${audioResponse.status} ${audioResponse.statusText}`);
-                
+
                 if (audioResponse.ok) {
                     const audioResult = await audioResponse.json();
                     console.log('- Audio endpoint response:', audioResult);
@@ -1128,7 +1128,7 @@ class MiraDesktop {
             } else {
                 this.showMessage('Backend connection failed', 'error');
             }
-            
+
         } catch (error) {
             console.error('Backend connection test failed:', error);
             this.showMessage('Backend connection test failed: ' + error.message, 'error');
@@ -1206,7 +1206,7 @@ document.addEventListener('keydown', (e) => {
             window.miraApp.toggleListening();
         }
     }
-    
+
     // Debug shortcuts (Ctrl+Shift+D for debug stats, Ctrl+Shift+M for debug mode toggle)
     if (e.ctrlKey && e.shiftKey && e.code === 'KeyD') {
         e.preventDefault();
@@ -1214,7 +1214,7 @@ document.addEventListener('keydown', (e) => {
             window.miraApp.showAudioStats();
         }
     }
-    
+
     if (e.ctrlKey && e.shiftKey && e.code === 'KeyM') {
         e.preventDefault();
         if (window.miraApp) {
@@ -1223,7 +1223,7 @@ document.addEventListener('keydown', (e) => {
             window.miraApp.showMessage(`Debug mode ${window.miraApp.debugMode ? 'enabled' : 'disabled'}`, 'info');
         }
     }
-    
+
     // Backend connection test (Ctrl+Shift+T)
     if (e.ctrlKey && e.shiftKey && e.code === 'KeyT') {
         e.preventDefault();
