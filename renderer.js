@@ -506,7 +506,7 @@ class MiraDesktop {
             console.log('- Duration:', (audioFloat32Array.length / 16000).toFixed(3), 'seconds');
             console.log('- Min sample:', Math.min(...audioFloat32Array).toFixed(4));
             console.log('- Max sample:', Math.max(...audioFloat32Array).toFixed(4));
-            console.log('- RMS:', Math.sqrt(audioFloat32Array.reduce((sum, x) => sum + x*x, 0) / audioFloat32Array.length).toFixed(4));
+            console.log('- RMS:', Math.sqrt(audioFloat32Array.reduce((sum, x) => sum + x * x, 0) / audioFloat32Array.length).toFixed(4));
         }
 
         try {
@@ -574,7 +574,7 @@ class MiraDesktop {
                 this.audioProcessingStats.totalAudioBytes += audioBytes.length;
                 this.audioProcessingStats.averageAudioDuration =
                     ((this.audioProcessingStats.averageAudioDuration * (this.audioProcessingStats.totalAudioSent - 1)) +
-                     (audioFloat32Array.length / 16000)) / this.audioProcessingStats.totalAudioSent;
+                        (audioFloat32Array.length / 16000)) / this.audioProcessingStats.totalAudioSent;
 
                 try {
                     const result = await response.json();
@@ -823,16 +823,36 @@ class MiraDesktop {
     }
 
     async addTranscriptionFromInteraction(interaction) {
-        // Convert UTC timestamp to local date and time string
-        const dateObj = new Date(interaction.timestamp);
-        const timestamp = dateObj.toLocaleString(undefined, {
-            year: 'numeric',
-            month: 'short',
-            day: 'numeric',
-            hour: '2-digit',
-            minute: '2-digit',
-            second: '2-digit'
-        });
+        // Parse timestamp with timezone offset and convert to local date/time string
+        // Handles formats like "2025-07-30 18:06:58.307+05:30"
+        let timestamp = interaction.timestamp;
+        try {
+            // Replace space with 'T' for ISO compatibility if needed
+            let isoString = timestamp.replace(' ', 'T');
+            // If no 'Z' or timezone, assume UTC
+            if (!/[zZ]|[+-]\d{2}:\d{2}$/.test(isoString)) {
+                isoString += 'Z';
+            }
+            const dateObj = new Date(isoString);
+            timestamp = dateObj.toLocaleString(undefined, {
+                year: 'numeric',
+                month: 'short',
+                day: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit'
+            });
+        } catch (e) {
+            const dateObj = new Date(interaction.timestamp);
+            const timestamp = dateObj.toLocaleString(undefined, {
+                year: 'numeric',
+                month: 'short',
+                day: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit'
+            });
+        }
 
         const response = await fetch(`${this.baseUrl}/context/speaker/${interaction.speaker_id}`);
         const speaker = await response.json();
