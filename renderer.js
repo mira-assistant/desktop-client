@@ -109,6 +109,7 @@ class MiraDesktop {
 
             if (response.ok) {
                 this.isConnected = true;
+                this.fetchLatestTranscriptions();
                 this.updateConnectionStatus(true);
                 this.hideConnectionBanner();
 
@@ -820,7 +821,7 @@ class MiraDesktop {
         }
     }
 
-    addTranscriptionFromInteraction(interaction) {
+    async addTranscriptionFromInteraction(interaction) {
         // Convert UTC timestamp to local date and time string
         const dateObj = new Date(interaction.timestamp);
         const timestamp = dateObj.toLocaleString(undefined, {
@@ -832,7 +833,9 @@ class MiraDesktop {
             second: '2-digit'
         });
 
-        const speaker = interaction.speaker_id || 'Unknown';
+        const response = await fetch(`${this.baseUrl}/context/speaker/${interaction.speaker_id}`);
+        const speaker = await response.json();
+
         const transcription = {
             text: interaction.text,
             timestamp: timestamp,
@@ -854,15 +857,6 @@ class MiraDesktop {
 
         // Scroll to bottom
         this.transcriptionContent.scrollTop = this.transcriptionContent.scrollHeight;
-
-        // Limit number of transcriptions displayed
-        if (this.transcriptions.length > 50) {
-            this.transcriptions.shift();
-            const firstElement = this.transcriptionContent.firstElementChild;
-            if (firstElement && !firstElement.classList.contains('empty-state')) {
-                firstElement.remove();
-            }
-        }
     }
 
     stopTranscriptionPolling() {
@@ -886,7 +880,7 @@ class MiraDesktop {
 
         element.innerHTML = `
             <div class="speaker-info" style="color: ${speakerColor.text};">
-                <span class="speaker-name">Speaker ${transcription.speaker}</span>
+                <span class="speaker-name">${transcription.speaker.name || "Speaker " + transcription.speaker.index || transcription.speaker.id}</span>
                 <span class="timestamp">${transcription.timestamp}</span>
             </div>
             <div class="text">${transcription.text}</div>
@@ -896,7 +890,7 @@ class MiraDesktop {
 
     getSpeakerColor(speaker) {
         // Create a mapping of speakers to different shades of green
-        const speakerIndex = parseInt(speaker) || this.getOrAssignSpeakerIndex(speaker);
+        const speakerIndex = parseInt(speaker.index) || this.getOrAssignSpeakerIndex(speaker.id);
 
         // Different shades of green for different speakers
         const greenShades = [
@@ -904,8 +898,6 @@ class MiraDesktop {
             { background: '#e6fffa', border: '#00e074', text: '#00b359' }, // Speaker 2 - Slightly darker
             { background: '#dcfdf7', border: '#00d15a', text: '#009944' }, // Speaker 3 - Even darker
             { background: '#d1fae5', border: '#00c249', text: '#007f30' }, // Speaker 4 - Forest green
-            { background: '#a7f3d0', border: '#00b33a', text: '#00661f' }, // Speaker 5 - Deep green
-            { background: '#6ee7b7', border: '#00a42c', text: '#004d0f' }, // Speaker 6 - Very dark green
         ];
 
         // Cycle through colors if more speakers than available shades
