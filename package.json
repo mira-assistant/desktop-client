@@ -8,7 +8,7 @@
     "start": "node start-script.js",
     "start-dev": "NODE_ENV=development node start-script.js",
     "test": "echo \"Error: no test specified\" && exit 1",
-    "build": "electron-builder",
+    "build": "electron-builder --publish=never",
     "build-mac": "electron-builder --mac",
     "build-win": "electron-builder --win",
     "lint": "eslint ."
