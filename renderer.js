@@ -82,6 +82,7 @@ class MiraDesktop {
                     this.baseUrl = url;
                     this.updateConnectionStatus(true);
                     this.hideConnectionBanner();
+                    this.isConnected = true;
 
                     if (!this.isRegistered) {
                         await this.registerClient();
@@ -94,7 +95,7 @@ class MiraDesktop {
 
                     console.log(`Connected to ${hostName} at ${url}`);
                     connected = true;
-                    break; // Stop after first successful connection
+                    break;
                 } else {
                     console.log('Connection check failed:', response.statusText);
                 }
