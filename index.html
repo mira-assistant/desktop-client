@@ -6,7 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Mira - Personal AI Assistant</title>
     <link rel="stylesheet" href="style.css">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
 
@@ -19,7 +19,7 @@
                     <i class="fas fa-microphone-alt"></i>
                     Mira
                 </h1>
-                <span class="version">v2.3.9</span>
+                <span class="version">v4.1.1</span>
             </div>
             <div class="status-section">
                 <div class="status-indicator" id="statusIndicator">
@@ -145,8 +145,6 @@
                     localScript.onload = () => {
                         if (typeof vad !== 'undefined' && vad.MicVAD) {
                             window.vadLibraryLoaded = true;
-                            console.log('✅ VAD library loaded from local package successfully');
-                            console.log('Available VAD methods:', Object.keys(vad));
                             resolve();
                         } else {
                             reject(new Error('VAD library loaded but MicVAD not found'));
@@ -170,8 +168,6 @@
                         cdnScript.onload = () => {
                             if (typeof vad !== 'undefined' && vad.MicVAD) {
                                 window.vadLibraryLoaded = true;
-                                console.log('✅ VAD library loaded from CDN successfully');
-                                console.log('Available VAD methods:', Object.keys(vad));
                                 resolve();
                             } else {
                                 reject(new Error('VAD library loaded but MicVAD not found'));
@@ -191,7 +187,6 @@
             }
         }
 
-        // Start loading VAD library immediately
         loadVADLibrary().catch(error => {
             console.error('❌ Failed to load VAD library:', error.message);
             window.vadLibraryLoadError = error.message;

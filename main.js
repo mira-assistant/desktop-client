@@ -15,7 +15,8 @@ function createWindow() {
       contextIsolation: true,
       enableRemoteModule: false,
       preload: path.join(__dirname, 'preload.js'),
-      devTools: true
+      devTools: true,
+      clipboard: true
     },
     icon: path.join(__dirname, 'assets', 'icon.png'), // We'll create this later
     titleBarStyle: 'default',
