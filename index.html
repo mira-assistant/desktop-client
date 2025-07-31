@@ -145,8 +145,6 @@
                     localScript.onload = () => {
                         if (typeof vad !== 'undefined' && vad.MicVAD) {
                             window.vadLibraryLoaded = true;
-                            console.log('✅ VAD library loaded from local package successfully');
-                            console.log('Available VAD methods:', Object.keys(vad));
                             resolve();
                         } else {
                             reject(new Error('VAD library loaded but MicVAD not found'));
@@ -170,8 +168,6 @@
                         cdnScript.onload = () => {
                             if (typeof vad !== 'undefined' && vad.MicVAD) {
                                 window.vadLibraryLoaded = true;
-                                console.log('✅ VAD library loaded from CDN successfully');
-                                console.log('Available VAD methods:', Object.keys(vad));
                                 resolve();
                             } else {
                                 reject(new Error('VAD library loaded but MicVAD not found'));
@@ -191,7 +187,6 @@
             }
         }
 
-        // Start loading VAD library immediately
         loadVADLibrary().catch(error => {
             console.error('❌ Failed to load VAD library:', error.message);
             window.vadLibraryLoadError = error.message;
