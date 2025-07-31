@@ -28,17 +28,6 @@ class MiraDesktop {
         this.initializeElements();
         this.setupEventListeners();
         this.startConnectionCheck();
-
-        // console.log('Mira Desktop initialized - debug info:');
-        // console.log('- Base URL:', this.baseUrl);
-        // console.log('- Client ID:', this.clientId);
-        // console.log('- Audio stats available at: window.miraApp.audioProcessingStats');
-        // console.log('- Enable debug mode: window.miraApp.debugMode = true');
-        // console.log('- Keyboard shortcuts:');
-        // console.log('  * Space: Toggle listening');
-        // console.log('  * Ctrl+Shift+D: Show audio stats');
-        // console.log('  * Ctrl+Shift+M: Toggle debug mode');
-        // console.log('  * Ctrl+Shift+T: Test backend connection');
     }
 
     initializeElements() {
@@ -458,7 +447,7 @@ class MiraDesktop {
             const controller = new AbortController();
             const timeoutId = setTimeout(() => controller.abort(), 15000);
 
-            const response = await fetch(`${this.baseUrl}/register_interaction`, {
+            const response = await fetch(`${this.baseUrl}/interactions/register`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/octet-stream',
@@ -712,7 +701,7 @@ class MiraDesktop {
             });
         }
 
-        const response = await fetch(`${this.baseUrl}/context/speaker/${interaction.speaker_id}`);
+        const response = await fetch(`${this.baseUrl}/speakers/${interaction.speaker_id}`);
         const speaker = await response.json();
 
         const transcription = {
@@ -891,77 +880,6 @@ class MiraDesktop {
         this.connectionCheckInterval = setInterval(() => {
             this.checkConnection();
         }, 1000);
-    }
-
-    showAudioStats() {
-        const stats = this.audioProcessingStats;
-        console.log('📊 Audio Processing Statistics:');
-        console.log(`- Total audio segments sent: ${stats.totalAudioSent}`);
-        console.log(`- Total bytes sent: ${stats.totalAudioBytes.toLocaleString()}`);
-        console.log(`- Successful requests: ${stats.successfulRequests}`);
-        console.log(`- Failed requests: ${stats.failedRequests}`);
-        console.log(`- Success rate: ${stats.totalAudioSent > 0 ? ((stats.successfulRequests / (stats.successfulRequests + stats.failedRequests)) * 100).toFixed(1) : 0}%`);
-        console.log(`- Average audio duration: ${stats.averageAudioDuration.toFixed(2)}s`);
-        console.log(`- VAD status: ${this.isRecording ? 'Recording' : 'Stopped'}`);
-        console.log(`- Backend connection: ${this.isConnected ? 'Connected' : 'Disconnected'}`);
-
-        // Show in UI as well
-        this.showMessage(`Audio Stats: ${stats.totalAudioSent} segments sent, ${stats.successfulRequests} successful, ${stats.failedRequests} failed`, 'info');
-
-        return stats;
-    }
-
-    async testBackendConnection() {
-        console.log('🔗 Testing backend connection...');
-
-        try {
-            const startTime = Date.now();
-            const response = await fetch(`${this.baseUrl}/`, {
-                method: 'GET',
-                cache: 'no-cache'
-            });
-            const responseTime = Date.now() - startTime;
-
-            console.log(`- Response time: ${responseTime}ms`);
-            console.log(`- Status: ${response.status} ${response.statusText}`);
-
-            if (response.ok) {
-                const data = await response.json();
-                console.log('- Backend response:', data);
-
-                console.log('🎵 Testing audio endpoint...');
-                const dummyAudio = new Uint8Array(1600); // 0.1s of silence at 16kHz
-
-                const audioTestStart = Date.now();
-                const audioResponse = await fetch(`${this.baseUrl}/register_interaction`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/octet-stream'
-                    },
-                    body: dummyAudio
-                });
-                const audioResponseTime = Date.now() - audioTestStart;
-
-                console.log(`- Audio endpoint response time: ${audioResponseTime}ms`);
-                console.log(`- Audio endpoint status: ${audioResponse.status} ${audioResponse.statusText}`);
-
-                if (audioResponse.ok) {
-                    const audioResult = await audioResponse.json();
-                    console.log('- Audio endpoint response:', audioResult);
-                    this.showMessage('Backend connection test successful!', 'info');
-                } else {
-                    const errorText = await audioResponse.text();
-                    console.log('- Audio endpoint error:', errorText);
-                    this.showMessage('Backend connection OK, but audio endpoint has issues', 'warning');
-                }
-            } else {
-                this.showMessage('Backend connection failed', 'error');
-            }
-
-        } catch (error) {
-            console.error('Backend connection test failed:', error);
-            this.showMessage('Backend connection test failed: ' + error.message, 'error');
-        }
     }
 
     async cleanup() {
