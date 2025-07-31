@@ -20,20 +20,15 @@ Thumbs.db
 
 # Dependencies
 node_modules/
-venv/
-env/
+dist/
+*.log
 
 # Build artifacts
 dist/
 build/
 *.egg-info/
 
-# Desktop app specific
-apps/desktop-client/node_modules/
-apps/desktop-client/dist/
-apps/desktop-client/*.log
 
 # Electron build artifacts
-apps/desktop-client/out/*.tmp
-/tmp/
-node_modules/
+*.tmp
+tmp/
