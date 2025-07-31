@@ -1,6 +1,6 @@
 class MiraDesktop {
     constructor() {
-        this.baseUrl = 'http://localhost:8000';
+        this.baseUrl = 'http://100.75.140.79:8000';
         this.clientId = 'Mira Desktop App';
         this.isConnected = false;
         this.isListening = false;
@@ -799,7 +799,7 @@ class MiraDesktop {
 
                 this.transcriptions = [];
                 this.transcription_ids.clear();
-                
+
                 this.transcriptionContent.innerHTML = `
                     <div class="empty-state">
                         <i class="fas fa-robot"></i>
