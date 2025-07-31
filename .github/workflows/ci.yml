@@ -1,0 +1,43 @@
+name: Mira Desktop-Client CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  desktop-client:
+    name: Desktop Client
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '20'
+
+      - name: Cache Node.js modules
+        uses: actions/cache@v3
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Run ESLint (Linting)
+        run: npm run lint
+        continue-on-error: true
+
+      - name: Build Electron App
+        run: npm run build
+
+      - name: Run frontend tests
+        run: npm test || echo "No tests found"

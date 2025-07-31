@@ -1,0 +1,39 @@
+# Python cache files
+__pycache__/
+.pytest_cache/
+*.py[cod]
+*$py.class
+
+# Test files and temporary directories
+/tmp/
+demo_*.py
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Dependencies
+node_modules/
+venv/
+env/
+
+# Build artifacts
+dist/
+build/
+*.egg-info/
+
+# Desktop app specific
+apps/desktop-client/node_modules/
+apps/desktop-client/dist/
+apps/desktop-client/*.log
+
+# Electron build artifacts
+apps/desktop-client/out/*.tmp
+/tmp/
+node_modules/
