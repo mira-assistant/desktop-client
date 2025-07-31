@@ -1,6 +1,11 @@
 class MiraDesktop {
     constructor() {
-        this.baseUrl = 'http://100.75.140.79:8000';
+        this.baseUrls = new Map([
+            ["localhost", 'http://localhost:8000'],
+            ["ankurs-macbook-air", 'http://100.75.140.79:8000']
+        ]);
+
+        this.baseUrl = null;
         this.clientId = 'Mira Desktop App';
         this.isConnected = false;
         this.isListening = false;
@@ -62,28 +67,43 @@ class MiraDesktop {
     }
 
     async checkConnection() {
-        try {
-            const response = await fetch(`${this.baseUrl}/`);
-            const status = await response.json();
+        let urls = Object.fromEntries(this.baseUrls);
 
-            if (response.ok) {
-                this.isConnected = true;
-                this.updateConnectionStatus(true);
-                this.hideConnectionBanner();
+        if (this.baseUrl) {
+            urls = { "cachedUrl": this.baseUrl, ...urls };
+        }
 
-                if (!this.isRegistered) {
-                    await this.registerClient();
+        let connected = false;
+
+        for (const [hostName, url] of Object.entries(urls)) {
+            try {
+                const response = await fetch(`${url}/`);
+                if (response.ok) {
+                    this.baseUrl = url;
+                    this.updateConnectionStatus(true);
+                    this.hideConnectionBanner();
+
+                    if (!this.isRegistered) {
+                        await this.registerClient();
+                    }
+
+                    const status = await response.json();
+                    this.updateFeatures(status.features);
+                    this.updateServerStatus(status);
+                    this.fetchLatestInteractions(status.recent_interactions);
+
+                    console.log(`Connected to ${hostName} at ${url}`);
+                    connected = true;
+                    break; // Stop after first successful connection
+                } else {
+                    console.log('Connection check failed:', response.statusText);
                 }
-
-                this.updateFeatures(status.features);
-                this.updateServerStatus(status);
-
-                this.fetchLatestInteractions(status.recent_interactions);
-            } else {
-                throw new Error('Server responded with error');
+            } catch (error) {
+                console.warn(`Failed to connect to ${hostName} at ${url}`);
             }
-        } catch (error) {
-            console.log('Connection check failed:', error.message);
+        }
+
+        if (!connected) {
             this.isConnected = false;
             this.isRegistered = false;
             this._deregistrationAttempted = false;
@@ -593,7 +613,8 @@ class MiraDesktop {
     updateConnectionStatus(connected) {
         if (connected) {
             this.statusDot.className = 'status-dot connected';
-            this.statusText.textContent = 'Connected';
+            const connectedHost = [...this.baseUrls.entries()].find(([_, url]) => url === this.baseUrl)?.[0];
+            this.statusText.textContent = 'Connected to ' + (connectedHost || this.baseUrl || 'unknown server');
             this.micButton.disabled = false;
         } else {
             this.statusDot.className = 'status-dot';
@@ -891,7 +912,8 @@ class MiraDesktop {
 
         this.connectionCheckInterval = setInterval(() => {
             this.checkConnection();
-        }, 1000);
+
+        }, 5000);
     }
 
     async cleanup() {
