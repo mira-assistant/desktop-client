@@ -8,8 +8,13 @@ class MiraDesktop {
         this.isToggling = false;
         this.isProcessingAudio = false;
         this._deregistrationAttempted = false;
+
         this.transcriptions = [];
+        this.transcription_ids = new Set();
         this.connectionCheckInterval = null;
+
+        this.speakerIndexMap = new Map();
+        this.nextSpeakerIndex = 0;
 
         // Audio capture properties - VAD-based
         this.micVAD = null;
@@ -63,7 +68,6 @@ class MiraDesktop {
 
             if (response.ok) {
                 this.isConnected = true;
-                this.fetchLatestTranscriptions();
                 this.updateConnectionStatus(true);
                 this.hideConnectionBanner();
 
@@ -73,6 +77,8 @@ class MiraDesktop {
 
                 this.updateFeatures(status.features);
                 this.updateServerStatus(status);
+
+                this.fetchLatestInteractions(status.recent_interactions);
             } else {
                 throw new Error('Server responded with error');
             }
@@ -88,7 +94,7 @@ class MiraDesktop {
 
     async registerClient() {
         try {
-            const response = await fetch(`${this.baseUrl}/register_client?client_id=${encodeURIComponent(this.clientId)}`, {
+            const response = await fetch(`${this.baseUrl}/service/client/register/${encodeURIComponent(this.clientId)}`, {
                 method: 'POST'
             });
 
@@ -109,8 +115,8 @@ class MiraDesktop {
         this._deregistrationAttempted = true;
 
         try {
-            const response = await fetch(`${this.baseUrl}/deregister_client?client_id=${encodeURIComponent(this.clientId)}`, {
-                method: 'POST',
+            const response = await fetch(`${this.baseUrl}/service/client/deregister/${encodeURIComponent(this.clientId)}`, {
+                method: 'DELETE',
                 headers: {
                     'Content-Type': 'application/json'
                 }
@@ -178,7 +184,7 @@ class MiraDesktop {
 
     async startListening() {
         try {
-            const response = await fetch(`${this.baseUrl}/enable`, {
+            const response = await fetch(`${this.baseUrl}/service/enable`, {
                 method: 'PATCH'
             });
 
@@ -206,7 +212,7 @@ class MiraDesktop {
             console.log('Stopping listening service...');
             await this.stopAudioCapture();
 
-            const response = await fetch(`${this.baseUrl}/disable`, {
+            const response = await fetch(`${this.baseUrl}/service/disable`, {
                 method: 'PATCH'
             });
 
@@ -471,13 +477,9 @@ class MiraDesktop {
 
                 try {
                     const result = await response.json();
-                    if (result.message !== "Duplicate transcription skipped") {
-                        console.log('VAD audio processed successfully:', result);
-                        if (this.debugMode) {
-                            console.log('DEBUG: Backend response:', result);
-                        }
-                    } else {
-                        console.log('Duplicate transcription was skipped');
+                    console.log('VAD audio processed successfully:', result);
+                    if (this.debugMode) {
+                        console.log('DEBUG: Backend response:', result);
                     }
                 } catch (jsonError) {
                     console.warn('Response was OK but failed to parse JSON:', jsonError);
@@ -644,7 +646,7 @@ class MiraDesktop {
         console.log('Starting transcription polling...');
         this.transcriptionInterval = setInterval(async () => {
             if (this.isListening && this.isConnected) {
-                await this.fetchLatestTranscriptions();
+                // await this.fetchLatestInteractions();
             } else {
                 console.log('Stopping polling - not listening or not connected');
                 this.stopTranscriptionPolling();
@@ -652,25 +654,38 @@ class MiraDesktop {
         }, 1000);
     }
 
-    async fetchLatestTranscriptions() {
-        try {
-            const response = await fetch(`${this.baseUrl}/interactions?limit=10`);
-            if (response.ok) {
-                const interactions = await response.json();
+    fetchLatestInteractions(interactions) {
 
-                interactions.forEach(interaction => {
-                    const interactionId = String(interaction.id);
-                    const existingTranscription = this.transcriptions.find(t => String(t.id) === interactionId);
+        console.log(`interactions: ${interactions}`);
 
-                    if (!existingTranscription) {
-                        console.log(`Adding new transcription: ${interactionId}`);
-                        this.addTranscriptionFromInteraction(interaction);
-                    }
-                });
+        interactions.forEach((interaction) => {
+            const existingTranscription = this.transcriptions.find(t => String(t.id) === String(interaction));
+            try {
+                if (!existingTranscription) {
+                    console.log(`Adding new transcription: ${interaction}`);
+
+                    fetch(`${this.baseUrl}/interactions/${interaction}`)
+                        .then(response => {
+                            if (response.ok) {
+                                return response.json();
+                            } else {
+                                console.error(`Failed to fetch interaction ${interaction}:`, response.status, response.statusText);
+                                return null;
+                            }
+                        })
+                        .then(interactionData => {
+                            if (interactionData) {
+                                this.addTranscriptionFromInteraction(interactionData);
+                            }
+                        })
+                        .catch(error => {
+                            console.error('Error fetching interaction:', error);
+                        });
+                }
+            } catch (error) {
+                console.error('Error fetching transcriptions:', error);
             }
-        } catch (error) {
-            console.error('Error fetching transcriptions:', error);
-        }
+        });
     }
 
     async addTranscriptionFromInteraction(interaction) {
@@ -764,11 +779,6 @@ class MiraDesktop {
     }
 
     getOrAssignSpeakerIndex(speaker) {
-        if (!this.speakerIndexMap) {
-            this.speakerIndexMap = new Map();
-            this.nextSpeakerIndex = 0;
-        }
-
         if (!this.speakerIndexMap.has(speaker)) {
             this.speakerIndexMap.set(speaker, this.nextSpeakerIndex);
             this.nextSpeakerIndex++;
@@ -788,6 +798,8 @@ class MiraDesktop {
                 console.log('Database cleared:', result);
 
                 this.transcriptions = [];
+                this.transcription_ids.clear();
+                
                 this.transcriptionContent.innerHTML = `
                     <div class="empty-state">
                         <i class="fas fa-robot"></i>
@@ -921,7 +933,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     window.addEventListener('beforeunload', async () => {
         if (window.miraApp && window.miraApp.isRegistered && !window.miraApp._deregistrationAttempted) {
-            const url = `${window.miraApp.baseUrl}/deregister_client?client_id=${encodeURIComponent(window.miraApp.clientId)}`;
+            const url = `${window.miraApp.baseUrl}/service/client/deregister/${encodeURIComponent(window.miraApp.clientId)}`;
             navigator.sendBeacon(url, '');
             window.miraApp._deregistrationAttempted = true;
         }
@@ -929,7 +941,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     window.addEventListener('unload', () => {
         if (window.miraApp && window.miraApp.isRegistered && !window.miraApp._deregistrationAttempted) {
-            const url = `${window.miraApp.baseUrl}/deregister_client?client_id=${encodeURIComponent(window.miraApp.clientId)}`;
+            const url = `${window.miraApp.baseUrl}/service/client/deregister/${encodeURIComponent(window.miraApp.clientId)}`;
             navigator.sendBeacon(url, '');
             window.miraApp._deregistrationAttempted = true;
         }
