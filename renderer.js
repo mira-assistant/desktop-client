@@ -626,15 +626,11 @@ class MiraDesktop {
         }
     }
 
-    updateServerStatus(status) {
+    async updateServerStatus(status) {
         if (status.enabled && !this.isListening) {
-            this.isListening = true;
-            this.updateListeningUI(true);
-            this.startTranscriptionPolling();
+            await this.startListening();
         } else if (!status.enabled && this.isListening) {
-            this.isListening = false;
-            this.updateListeningUI(false);
-            this.stopTranscriptionPolling();
+            await this.stopListening();
         }
     }
 
@@ -914,7 +910,7 @@ class MiraDesktop {
         this.connectionCheckInterval = setInterval(() => {
             this.checkConnection();
 
-        }, 5000);
+        }, 1000);
     }
 
     async cleanup() {
@@ -957,7 +953,7 @@ document.addEventListener('DOMContentLoaded', () => {
     window.addEventListener('beforeunload', async () => {
         if (window.miraApp && window.miraApp.isRegistered && !window.miraApp._deregistrationAttempted) {
             const url = `${window.miraApp.baseUrl}/service/client/deregister/${encodeURIComponent(window.miraApp.clientId)}`;
-            navigator.sendBeacon(url, '');
+            fetch(url, { method: 'DELETE' });
             window.miraApp._deregistrationAttempted = true;
         }
     });
@@ -965,7 +961,7 @@ document.addEventListener('DOMContentLoaded', () => {
     window.addEventListener('unload', () => {
         if (window.miraApp && window.miraApp.isRegistered && !window.miraApp._deregistrationAttempted) {
             const url = `${window.miraApp.baseUrl}/service/client/deregister/${encodeURIComponent(window.miraApp.clientId)}`;
-            navigator.sendBeacon(url, '');
+            fetch(url, { method: 'DELETE' });
             window.miraApp._deregistrationAttempted = true;
         }
     });
