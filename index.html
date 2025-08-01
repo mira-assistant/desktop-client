@@ -19,9 +19,13 @@
                     <i class="fas fa-microphone-alt"></i>
                     Mira
                 </h1>
-                <span class="version">v4.1.1</span>
+                <span class="version">v4.2.0</span>
             </div>
             <div class="status-section">
+                <div class="client-name-section">
+                    <label for="clientNameInput">Client Name:</label>
+                    <input type="text" id="clientNameInput" value="desktop-client" placeholder="Enter client name" maxlength="50">
+                </div>
                 <div class="status-indicator" id="statusIndicator">
                     <div class="status-dot" id="statusDot"></div>
                     <span class="status-text" id="statusText">Disconnected</span>
@@ -35,6 +39,11 @@
             <div class="controls-section">
                 <div class="microphone-container">
                     <button class="mic-button" id="micButton" disabled>
+                        <div class="red-ripple-waves" id="redRippleWaves">
+                            <div class="red-ripple-wave"></div>
+                            <div class="red-ripple-wave"></div>
+                            <div class="red-ripple-wave"></div>
+                        </div>
                         <div class="mic-button-inner">
                             <div class="mic-icon" id="micIcon">
                                 <svg class="mic-svg" viewBox="0 0 24 24" fill="currentColor">
@@ -42,14 +51,6 @@
                                         d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5.3-3c0 3-2.54 5.1-5.3 5.1S6.7 14 6.7 11H5c0 3.41 2.72 6.23 6 6.72V21h2v-3.28c3.28-.48 6-3.3 6-6.72h-1.7z" />
                                 </svg>
                             </div>
-                        </div>
-                        <div class="ripple-effect" id="rippleEffect"></div>
-                        <div class="red-ripple-waves" id="redRippleWaves">
-                            <div class="red-ripple-wave"></div>
-                            <div class="red-ripple-wave"></div>
-                            <div class="red-ripple-wave"></div>
-                            <div class="red-ripple-wave"></div>
-                            <div class="red-ripple-wave"></div>
                         </div>
                     </button>
                     <p class="mic-status-text" id="micStatusText">Click to start listening</p>
@@ -86,7 +87,7 @@
                                 <i class="fas fa-database"></i>
                                 <div class="feature-content">
                                     <span class="feature-name">Database Integration</span>
-                                    <span class="feature-description">Seamlessly store and search transcription
+                                    <span class="feature-description">Seamlessly store and search interaction
                                         history</span>
                                 </div>
                             </div>
@@ -95,19 +96,19 @@
                 </div>
             </div>
 
-            <!-- Right side - Transcription -->
-            <div class="transcription-section">
-                <div class="transcription-header">
+            <!-- Right side - Interaction -->
+            <div class="interaction-section">
+                <div class="interaction-header">
                     <h2>Live Assistant</h2>
-                    <div class="transcription-controls">
+                    <div class="interaction-controls">
                         <button class="clear-button" id="clearButton">
                             <i class="fas fa-trash"></i>
                             Clear
                         </button>
                     </div>
                 </div>
-                <div class="transcription-container">
-                    <div class="transcription-content" id="transcriptionContent">
+                <div class="interaction-container">
+                    <div class="interaction-content" id="interactionContent">
                         <div class="empty-state">
                             <i class="fas fa-robot"></i>
                             <p>No conversations yet</p>
@@ -192,7 +193,7 @@
             window.vadLibraryLoadError = error.message;
         });
     </script>
-    <script src="renderer.js"></script>
+    <script type="module" src="renderer.js"></script>
 </body>
 
 </html>

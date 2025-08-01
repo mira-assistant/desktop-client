@@ -1,20 +1,22 @@
 {
   "name": "mira-desktop",
-  "version": "4.1.1",
-  "description": "Mira Desktop - Cross-platform voice transcription application",
+  "version": "4.2.0",
+  "description": "Mira Desktop - Cross-platform voice interaction application",
   "main": "main.js",
   "type": "commonjs",
   "scripts": {
     "start": "node start-script.js",
     "start-dev": "NODE_ENV=development node start-script.js",
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage",
     "build": "electron-builder --publish=never",
     "build-mac": "electron-builder --mac",
     "build-win": "electron-builder --win",
     "lint": "eslint ."
   },
   "keywords": [
-    "transcription",
+    "interaction",
     "whisper",
     "desktop",
     "voice"
@@ -22,12 +24,38 @@
   "author": "Mira Team",
   "license": "ISC",
   "devDependencies": {
+    "@babel/core": "^7.28.0",
+    "@babel/preset-env": "^7.28.0",
     "@eslint/js": "^9.32.0",
+    "babel-jest": "^30.0.5",
     "electron": "^37.2.4",
     "electron-builder": "^26.0.12",
     "eslint": "^9.32.0",
     "eslint-plugin-n": "^17.21.3",
-    "globals": "^16.3.0"
+    "globals": "^16.3.0",
+    "jest": "^30.0.5"
+  },
+  "jest": {
+    "testEnvironment": "node",
+    "transform": {
+      "^.+\\.js$": "babel-jest"
+    },
+    "transformIgnorePatterns": [
+      "node_modules/(?!(.*\\.mjs$))"
+    ],
+    "testMatch": [
+      "**/tests/**/*.test.js",
+      "**/__tests__/**/*.js",
+      "**/?(*.)+(spec|test).js"
+    ],
+    "collectCoverageFrom": [
+      "*.js",
+      "!main.js",
+      "!start-script.js",
+      "!preload.js",
+      "!jest.config.js",
+      "!eslint.config.js"
+    ]
   },
   "build": {
     "appId": "com.mira.desktop",

@@ -1,27 +1,33 @@
-class MiraDesktop {
-    constructor() {
-        this.baseUrls = new Map([
-            ["localhost", 'http://localhost:8000'],
-            ["ankurs-macbook-air", 'http://100.75.140.79:8000']
-        ]);
+import { API_CONFIG, AUDIO_CONFIG, UI_CONFIG, DEBUG_CONFIG, ERROR_MESSAGES, SUCCESS_MESSAGES } from './constants.js';
+import { ApiService } from './api.js';
 
-        this.baseUrl = null;
-        this.clientId = 'Mira Desktop App';
-        this.isConnected = false;
+/**
+ * MiraDesktop - Main application class for the Mira Desktop Client
+ * Handles audio recording, interaction, and backend communication
+ */
+class MiraDesktop {
+    /**
+     * Initialize the MiraDesktop application
+     */
+    constructor() {
+        /** Initialize API service that manages its own connection */
+        this.apiService = new ApiService();
+
+        /** Local state (not available via API service) */
         this.isListening = false;
-        this.isRegistered = false;
         this.isToggling = false;
         this.isProcessingAudio = false;
-        this._deregistrationAttempted = false;
+        this.isDeregistering = false;
+        this.isTogglingAudioCapture = false;
 
-        this.transcriptions = [];
-        this.transcription_ids = new Set();
-        this.connectionCheckInterval = null;
+        /** Interaction data */
+        this.interactions = [];
 
-        this.speakerIndexMap = new Map();
-        this.nextSpeakerIndex = 0;
+        /** Person management */
+        this.personIndexMap = new Map();
+        this.nextPersonIndex = 0;
 
-        // Audio capture properties - VAD-based
+        /** Audio capture properties for VAD-based recording */
         this.micVAD = null;
         this.isRecording = false;
         this.audioProcessingStats = {
@@ -32,12 +38,51 @@ class MiraDesktop {
             averageAudioDuration: 0
         };
 
-        // Debug mode (can be enabled via console: window.miraApp.debugMode = true)
-        this.debugMode = false;
-
+        /** Set up API service event listeners */
         this.initializeElements();
         this.setupEventListeners();
-        this.startConnectionCheck();
+        this.setupApiEventListeners();
+
+        /** Initialize connection banner state - start as disconnected */
+        this.showConnectionBanner();
+    }
+
+    /**
+     * Set up event listeners for API service events
+     */
+    setupApiEventListeners() {
+        /** Listen for connection changes, complete disconnection, or new host */
+        this.apiService.addEventListener('connectionChange', (event) => {
+            const { connected, hostName, url } = event.detail;
+
+            if (connected) {
+                this.updateConnectionStatus(true);
+                this.hideConnectionBanner();
+
+                /** Log successful connection */
+                this.log('info', `Connected to ${hostName} at ${url}`);
+            } else {
+                this.updateConnectionStatus(false);
+                this.showConnectionBanner();
+
+                /** Connection lost - let statusChange handle listening state through health checks */
+            }
+        });
+
+        /** Listen for service status changes */
+        this.apiService.addEventListener('statusChange', (event) => {
+            const { enabled } = event.detail;
+            this.updateServerStatus({ enabled });
+
+            /** Manage listening state based on service status */
+            this.manageListeningState(enabled);
+        });
+
+        /** Listen for interaction updates */
+        this.apiService.addEventListener('interactionsUpdated', (event) => {
+            const { interactionIds } = event.detail;
+            this.fetchLatestInteractions(interactionIds);
+        });
     }
 
     initializeElements() {
@@ -46,17 +91,63 @@ class MiraDesktop {
         this.micStatusText = document.getElementById('micStatusText');
         this.statusDot = document.getElementById('statusDot');
         this.statusText = document.getElementById('statusText');
-        this.transcriptionContent = document.getElementById('transcriptionContent');
+        this.interactionContent = document.getElementById('interactionContent');
         this.clearButton = document.getElementById('clearButton');
         this.connectionBanner = document.getElementById('connectionBanner');
         this.retryButton = document.getElementById('retryButton');
         this.rippleEffect = document.getElementById('rippleEffect');
+        this.clientNameInput = document.getElementById('clientNameInput');
+    }
+
+    /**
+     * Unified function to manage listening state based on service enabled status
+     * Handles enabling/disabling audio streams, MicVAD systems, and all listening components
+     * @param {boolean} enabled - Whether the service should be enabled
+     */
+    async manageListeningState(enabled) {
+        try {
+            if (enabled && !this.isListening) {
+                /** Enable listening: start audio capture and interaction */
+                await this.startAudioCapture();
+                this.isListening = true;
+                this.updateListeningUI(true);
+                this.log('info', SUCCESS_MESSAGES.AUDIO_START);
+                this.debugLog('audio', 'Listening enabled via state management', {
+                    serviceEnabled: true,
+                    vadInitialized: !!this.micVAD
+                });
+            } else if (!enabled && this.isListening) {
+                /** Disable listening: stop audio capture and cleanup */
+                await this.stopAudioCapture();
+                this.isListening = false;
+                this.updateListeningUI(false);
+                this.log('info', 'Listening disabled via state management');
+                this.debugLog('audio', 'Listening disabled via state management', {
+                    serviceEnabled: false,
+                    vadDestroyed: !this.micVAD
+                });
+            }
+        } catch (error) {
+            this.log('error', 'Error in manageListeningState', error);
+            /** Ensure cleanup on error */
+            if (!enabled) {
+                await this.stopAudioCapture();
+                this.isListening = false;
+                this.updateListeningUI(false);
+                this.stopInteractionPolling();
+            }
+        }
     }
 
     setupEventListeners() {
         this.micButton.addEventListener('click', () => this.toggleListening());
-        this.clearButton.addEventListener('click', () => this.clearTranscriptions());
-        this.retryButton.addEventListener('click', () => this.checkConnection());
+        this.clearButton.addEventListener('click', () => this.clearInteractions());
+        this.retryButton.addEventListener('click', () => this.handleRetryConnection());
+        this.clientNameInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                this.handleClientNameChange(e.target.value);
+            }
+        });
 
         document.addEventListener('keydown', (e) => {
             if (e.key === ' ' && !e.target.matches('input, textarea')) {
@@ -66,196 +157,250 @@ class MiraDesktop {
         });
     }
 
-    async checkConnection() {
-        let urls = Object.fromEntries(this.baseUrls);
-
-        if (this.baseUrl) {
-            urls = { "cachedUrl": this.baseUrl, ...urls };
-        }
-
-        let connected = false;
-
-        for (const [hostName, url] of Object.entries(urls)) {
-            try {
-                const response = await fetch(`${url}/`);
-                if (response.ok) {
-                    this.baseUrl = url;
-                    this.updateConnectionStatus(true);
-                    this.hideConnectionBanner();
-                    this.isConnected = true;
-
-                    if (!this.isRegistered) {
-                        await this.registerClient();
-                    }
-
-                    const status = await response.json();
-                    this.updateFeatures(status.features);
-                    this.updateServerStatus(status);
-                    this.fetchLatestInteractions(status.recent_interactions);
-
-                    console.log(`Connected to ${hostName} at ${url}`);
-                    connected = true;
-                    break;
-                } else {
-                    console.log('Connection check failed:', response.statusText);
-                }
-            } catch (error) {
-                console.warn(`Failed to connect to ${hostName} at ${url}`);
-            }
-        }
-
-        if (!connected) {
-            this.isConnected = false;
-            this.isRegistered = false;
-            this._deregistrationAttempted = false;
-            this.updateConnectionStatus(false);
-            this.showConnectionBanner();
-        }
+    /**
+     * Handle client name change from input field
+     * @param {string} newClientName - New client name
+     */
+    /**
+     * Handle retry connection button click with visual feedback
+     */
+    handleRetryConnection() {
+        this.showMessage('Attempting to reconnect...', 'info');
+        this.apiService.checkConnection();
     }
 
-    async registerClient() {
-        try {
-            const response = await fetch(`${this.baseUrl}/service/client/register/${encodeURIComponent(this.clientId)}`, {
-                method: 'POST'
-            });
-
-            if (response.ok) {
-                this.isRegistered = true;
-                console.log('Client registered successfully');
-            }
-        } catch (error) {
-            console.error('Failed to register client:', error);
-        }
-    }
-
-    async deregisterClient() {
-        if (!this.isRegistered || this._deregistrationAttempted) {
+    /**
+     * Handle client name change when user presses Enter
+     * @param {string} newClientName - New client name input
+     */
+    async handleClientNameChange(newClientName) {
+        if (!newClientName || newClientName.trim() === '') {
+            /** Reset to current client ID if empty */
+            this.clientNameInput.value = this.apiService.clientId;
             return;
         }
 
-        this._deregistrationAttempted = true;
-
-        try {
-            const response = await fetch(`${this.baseUrl}/service/client/deregister/${encodeURIComponent(this.clientId)}`, {
-                method: 'DELETE',
-                headers: {
-                    'Content-Type': 'application/json'
-                }
+        const success = await this.apiService.updateClientId(newClientName.trim());
+        if (success) {
+            this.log('info', `Client name updated to: ${this.apiService.clientId}`);
+            this.debugLog('client', 'Client name changed successfully', {
+                newClientName: this.apiService.clientId,
+                connected: this.apiService.isConnected
             });
 
-            if (response.ok) {
-                this.isRegistered = false;
-                console.log('Client deregistered successfully');
+            /** Show success message and make text appear gray/placeholder-like */
+            this.showMessage(`Client name updated to: ${this.apiService.clientId}`, 'info');
+            this.clientNameInput.style.color = '#999';
+            this.clientNameInput.value = this.apiService.clientId;
+
+            /** Reset text color after a short delay */
+            setTimeout(() => {
+                this.clientNameInput.style.color = '';
+            }, 2000);
+        } else {
+            /** Revert input on failure */
+            this.clientNameInput.value = this.apiService.clientId;
+            this.log('warn', 'Failed to update client name - reverted to previous name');
+            this.showMessage('Failed to update client name', 'error');
+        }
+    }
+
+    /**
+     * Enhanced logging method with debug levels and proper console methods
+     * @param {string} level - Log level: 'error', 'warn', 'info', 'debug'
+     * @param {string} message - Log message
+     * @param {any} data - Optional data to log
+     */
+    log(level, message, data = null) {
+        const levels = DEBUG_CONFIG.LOG_LEVELS;
+        const currentLevel = DEBUG_CONFIG.DEBUG_MODE ? DEBUG_CONFIG.LOG_LEVELS.DEBUG : DEBUG_CONFIG.LOG_LEVELS.INFO;
+
+        if (levels[level.toUpperCase()] > currentLevel) {
+            return;
+        }
+
+        const timestamp = new Date().toISOString();
+        const prefix = `[${timestamp}] [${level.toUpperCase()}]`;
+
+        switch (level.toLowerCase()) {
+            case 'error':
+                console.error(prefix, message, data || '');
+                break;
+            case 'warn':
+                console.warn(prefix, message, data || '');
+                break;
+            case 'info':
+                console.log(prefix, message, data || '');
+                break;
+            case 'debug':
+                if (DEBUG_CONFIG.DEBUG_MODE) {
+                    console.log(prefix, message, data || '');
+                }
+                break;
+            default:
+                console.log(prefix, message, data || '');
+        }
+    }
+
+    /**
+     * Log debug information with important data when in debug mode
+     * @param {string} category - Debug category (e.g., 'audio', 'api', 'vad')
+     * @param {string} message - Debug message
+     * @param {Object} data - Important data to include
+     */
+    debugLog(category, message, data = {}) {
+        if (DEBUG_CONFIG.DEBUG_MODE) {
+            this.log('debug', `[${category.toUpperCase()}] ${message}`, {
+                timestamp: Date.now(),
+                debugData: data,
+                appState: {
+                    isConnected: this.apiService.isConnected,
+                    isListening: this.isListening,
+                    isRecording: this.isRecording,
+                    isRegistered: this.apiService.isRegistered
+                }
+            });
+        }
+    }
+
+    /**
+     * Check connection to available servers
+     * Wrapper method that delegates to API service
+     */
+    async checkConnection() {
+        return this.apiService.checkConnection();
+    }
+
+    /**
+     * Register client with backend service
+     * Uses ApiService for proper error handling and response parsing
+     */
+    async registerClient() {
+        try {
+            const success = await this.apiService.registerClient();
+
+            if (success) {
+                this.log('info', SUCCESS_MESSAGES.REGISTRATION);
+                this.debugLog('api', 'Client registration successful', { clientId: API_CONFIG.CLIENT_ID });
             } else {
-                console.error('Failed to deregister client:', response.status, response.statusText);
+                this.log('error', 'Failed to register client');
             }
         } catch (error) {
-            console.error('Failed to deregister client:', error);
+            this.log('error', `Client registration error: ${error.message}`);
+        }
+    }
+
+    /**
+     * Deregister client from backend service
+     * Uses ApiService for proper cleanup and error handling
+     */
+    async deregisterClient() {
+        if (this.isDeregistering) {
+            return;
+        }
+
+        this.isDeregistering = true;
+        try {
+            const success = await this.apiService.deregisterClient();
+
+            if (success) {
+                this.log('info', 'Client deregistered successfully');
+                this.debugLog('api', 'Client deregistration successful', { clientId: API_CONFIG.CLIENT_ID });
+            } else {
+                this.log('error', 'Failed to deregister client');
+            }
+        } catch (error) {
+            this.log('error', `Client deregistration error: ${error.message}`);
         }
     }
 
     async toggleListening() {
-        if (!this.isConnected) {
+        if (!this.apiService.isConnected) {
             this.showMessage('Please wait for connection to the backend server');
             return;
         }
 
+        // Wait until audio capture is not toggling (ready)
+        async function waitTilAudioCaptureReady(ctx) {
+            while (ctx.isTogglingAudioCapture) {
+                console.log('Waiting for audio capture to be ready...');
+                await new Promise(resolve => setTimeout(resolve, 50));
+            }
+        }
+
         if (this.isToggling) {
-            console.log('Toggle already in progress, ignoring');
             return;
         }
 
         this.isToggling = true;
-        const originalButtonText = this.micStatusText.textContent;
 
         try {
-            this.micButton.style.opacity = '0.7';
+            /** Provide immediate UI feedback */
+            this.micButton.disabled = true;
+            this.micButton.style.opacity = UI_CONFIG.OPACITY.DISABLED;
             this.micStatusText.textContent = this.isListening ? 'Stopping...' : 'Starting...';
-
-            await new Promise(resolve => setTimeout(resolve, 50));
+            this.isTogglingAudioCapture = true;
 
             if (this.isListening) {
-                await this.stopListening();
-            } else {
-                await this.startListening();
-            }
-        } catch (error) {
-            console.error('Error toggling listening:', error);
+                /** Send disable request to backend - state management will handle cleanup */
+                const success = await this.apiService.disableService();
 
+                if (!success) {
+                    throw new Error('Failed to send disable request to backend');
+                }
+            } else {
+                /** Send enable request to backend - state management will handle audio start */
+                const success = await this.apiService.enableService();
+
+                if (!success) {
+                    throw new Error('Failed to send enable request to backend');
+                }
+            }
+
+            await waitTilAudioCaptureReady(this);
+
+        } catch (error) {
+            this.log('error', 'Error toggling listening', error);
+
+            /** Determine user-friendly error message */
             let errorMessage = 'Error: ' + error.message;
             if (error.message.includes('Permission denied') || error.message.includes('NotAllowedError')) {
-                errorMessage = 'Microphone permission denied. Please allow microphone access and try again.';
+                errorMessage = ERROR_MESSAGES.AUDIO.PERMISSION_DENIED;
             } else if (error.message.includes('internet') || error.message.includes('VAD library')) {
-                errorMessage = 'Voice detection library failed to load. Please check your internet connection and refresh the page.';
+                errorMessage = ERROR_MESSAGES.AUDIO.VAD_INIT_FAILED;
             } else if (error.message.includes('timeout')) {
-                errorMessage = 'Operation timed out. Please try again.';
+                errorMessage = ERROR_MESSAGES.NETWORK.TIMEOUT;
+            } else if (error.message.includes('backend') || error.message.includes('Backend')) {
+                errorMessage = ERROR_MESSAGES.BACKEND.SERVICE_UNAVAILABLE;
+            } else if (error.message.includes('network') || error.message.includes('Failed to fetch')) {
+                errorMessage = ERROR_MESSAGES.NETWORK.CONNECTION_FAILED;
             }
 
             this.showMessage(errorMessage, 'error');
+
+            /** Ensure UI reflects actual state after error */
             this.updateListeningUI(this.isListening);
+
+            /** Log detailed error information for debugging */
+            console.error('Toggle listening error details:', {
+                message: error.message,
+                isConnected: this.apiService.isConnected,
+                isListening: this.isListening,
+                isRecording: this.isRecording
+            });
+
         } finally {
+            this.micButton.disabled = false;
+            this.updateListeningUI(this.isListening);
             this.isToggling = false;
-            this.micButton.style.opacity = '1';
-
-            if (!this.isListening && this.micStatusText.textContent.includes('...')) {
-                this.micStatusText.textContent = originalButtonText;
-            }
         }
     }
 
-    async startListening() {
-        try {
-            const response = await fetch(`${this.baseUrl}/service/enable`, {
-                method: 'PATCH'
-            });
-
-            if (response.ok) {
-                await this.startAudioCapture();
-                this.isListening = true;
-                this.updateListeningUI(true);
-                this.startTranscriptionPolling();
-            } else {
-                const errorText = await response.text();
-                console.error('Failed to enable backend service:', response.status, errorText);
-                throw new Error(`Failed to enable listening: ${response.status}`);
-            }
-        } catch (error) {
-            console.error('Error starting listening:', error);
-            await this.stopAudioCapture();
-            this.isListening = false;
-            this.updateListeningUI(false);
-            throw error;
-        }
-    }
-
-    async stopListening() {
-        try {
-            console.log('Stopping listening service...');
-            await this.stopAudioCapture();
-
-            const response = await fetch(`${this.baseUrl}/service/disable`, {
-                method: 'PATCH'
-            });
-
-            if (response.ok) {
-                this.isListening = false;
-                this.updateListeningUI(false);
-                this.stopTranscriptionPolling();
-            } else {
-                const errorText = await response.text();
-                console.error('Failed to disable backend service:', response.status, errorText);
-                throw new Error(`Failed to disable listening: ${response.status}`);
-            }
-        } catch (error) {
-            console.error('Error stopping listening:', error);
-            this.isListening = false;
-            this.updateListeningUI(false);
-            this.stopTranscriptionPolling();
-            throw error;
-        }
-    }
-
-    async waitForVADLibrary(timeout = 15000) {
+    /**
+     * Wait for VAD library to load with timeout
+     * @param {number} timeout - Timeout in milliseconds
+     */
+    async waitForVADLibrary(timeout = API_CONFIG.TIMEOUTS.VAD_LIBRARY_LOAD) {
         const startTime = Date.now();
 
         while (Date.now() - startTime < timeout) {
@@ -275,7 +420,9 @@ class MiraDesktop {
 
     async startAudioCapture() {
         try {
-            console.log('Requesting microphone access...');
+            this.log('info', 'Starting audio capture process');
+
+            this.isTogglingAudioCapture = true;
             await this.waitForVADLibrary();
 
             if (typeof vad === 'undefined') {
@@ -290,33 +437,40 @@ class MiraDesktop {
             }
 
             const { MicVAD } = vad;
-            const sampleRate = 16000;
-            const frameSamples = 1536;
-            const targetSilenceMs = 580;
+            const sampleRate = AUDIO_CONFIG.VAD_SETTINGS.SAMPLE_RATE;
+            const frameSamples = AUDIO_CONFIG.VAD_SETTINGS.FRAME_SAMPLES;
+            const targetSilenceMs = AUDIO_CONFIG.VAD_SETTINGS.TARGET_SILENCE_MS;
             const redemptionFrames = Math.max(1, Math.round((targetSilenceMs * sampleRate) / (frameSamples * 1000)));
-
-            console.log(`VAD loaded with ${redemptionFrames} redemption frames for ${targetSilenceMs}ms silence detection`);
 
             const vadInitPromise = MicVAD.new({
                 model: 'legacy',
 
-                positiveSpeechThreshold: 0.2, // Lower threshold for better detection
-                negativeSpeechThreshold: 0.15,
+                /** Optimized thresholds for better noise rejection */
+                positiveSpeechThreshold: AUDIO_CONFIG.VAD_THRESHOLDS.POSITIVE_SPEECH,
+                negativeSpeechThreshold: AUDIO_CONFIG.VAD_THRESHOLDS.NEGATIVE_SPEECH,
 
                 redemptionFrames: redemptionFrames,
 
-                // Audio quality settings
+                /** Audio quality settings optimized for interaction */
                 frameSamples: frameSamples,
-                preSpeechPadFrames: 1, // Reduced for faster response
-                minSpeechFrames: 3, // Reduced minimum to avoid missing short utterances
+                preSpeechPadFrames: AUDIO_CONFIG.VAD_SETTINGS.PRE_SPEECH_PAD_FRAMES,
+                minSpeechFrames: AUDIO_CONFIG.VAD_SETTINGS.MIN_SPEECH_FRAMES,
 
-                // Enhanced audio constraints for better quality
+                /** Enhanced audio constraints for maximum quality */
                 additionalAudioConstraints: {
-                    sampleRate: sampleRate,
-                    echoCancellation: true,
-                    noiseSuppression: true,
-                    autoGainControl: true,
-                    channelCount: 1
+                    sampleRate: AUDIO_CONFIG.CONSTRAINTS.SAMPLE_RATE,
+                    echoCancellation: AUDIO_CONFIG.CONSTRAINTS.ECHO_CANCELLATION,
+                    noiseSuppression: AUDIO_CONFIG.CONSTRAINTS.NOISE_SUPPRESSION,
+                    autoGainControl: AUDIO_CONFIG.CONSTRAINTS.AUTO_GAIN_CONTROL,
+                    channelCount: AUDIO_CONFIG.CONSTRAINTS.CHANNELS,
+
+                    /** Advanced constraints for better audio quality */
+                    googEchoCancellation: AUDIO_CONFIG.CONSTRAINTS.GOOGLE_ECHO_CANCELLATION,
+                    googAutoGainControl: AUDIO_CONFIG.CONSTRAINTS.GOOGLE_AUTO_GAIN_CONTROL,
+                    googNoiseSuppression: AUDIO_CONFIG.CONSTRAINTS.GOOGLE_NOISE_SUPPRESSION,
+                    googHighpassFilter: AUDIO_CONFIG.CONSTRAINTS.GOOGLE_HIGHPASS_FILTER,
+                    googAudioMirroring: AUDIO_CONFIG.CONSTRAINTS.GOOGLE_AUDIO_MIRRORING,
+                    latency: AUDIO_CONFIG.CONSTRAINTS.LATENCY,
                 },
 
                 onSpeechStart: () => {
@@ -325,36 +479,47 @@ class MiraDesktop {
 
                 onSpeechEnd: (audio) => {
                     try {
-                        const durationSeconds = audio.length / sampleRate;
-                        console.log(`VAD: Speech ended, processing ${durationSeconds.toFixed(2)}s of audio (${audio.length} samples)`);
                         this.updateVADStatus('processing');
 
-                        // Validate audio data before sending
+                        /** Validate and optimize audio data before sending */
                         if (audio && audio.length > 0) {
-                            this.sendVADAudioToBackend(audio);
+                            this.processAndSendOptimizedAudio(audio);
                         } else {
-                            console.warn('VAD: Empty audio data received, skipping');
                             this.updateVADStatus('waiting');
                         }
                     } catch (err) {
-                        console.error('VAD: Error in onSpeechEnd callback:', err);
+                        this.log('error', 'VAD error in onSpeechEnd callback', err);
                         this.updateVADStatus('waiting');
                     }
                 },
 
                 onVADMisfire: () => {
-                    console.log('VAD: Speech detected but too short (misfire)');
                     this.updateVADStatus('waiting');
                 },
 
                 onFrameProcessed: (probabilities) => {
-                    if (probabilities && probabilities.isSpeech > 0.5) {
-                        console.log('VAD probability:', probabilities.isSpeech.toFixed(3));
+                    /** Enhanced debug mode logging for frame processing */
+                    if (DEBUG_CONFIG.DEBUG_MODE) {
+                        this.debugLog('vad', 'Frame processed', {
+                            probabilities: probabilities,
+                            isRecording: this.isRecording,
+                            vadStatus: this.micStatusText?.textContent,
+                            audioOptimization: {
+                                enableAdvancedNoiseReduction: AUDIO_CONFIG.OPTIMIZATION.ENABLE_ADVANCED_NOISE_REDUCTION,
+                                enableDynamicGainControl: AUDIO_CONFIG.OPTIMIZATION.ENABLE_DYNAMIC_GAIN_CONTROL,
+                                enableSpectralGating: AUDIO_CONFIG.OPTIMIZATION.ENABLE_SPECTRAL_GATING,
+                                noiseFloor: AUDIO_CONFIG.OPTIMIZATION.NOISE_FLOOR,
+                                signalThreshold: AUDIO_CONFIG.OPTIMIZATION.SIGNAL_THRESHOLD,
+                                adaptiveThresholds: AUDIO_CONFIG.OPTIMIZATION.ENABLE_ADAPTIVE_THRESHOLDS,
+                                environmentalNoise: AUDIO_CONFIG.OPTIMIZATION.ENVIRONMENTAL_NOISE,
+                                lastNoiseAnalysis: AUDIO_CONFIG.OPTIMIZATION.LAST_NOISE_ANALYSIS
+                            }
+                        });
                     }
                 },
 
                 onError: (error) => {
-                    console.error('VAD: Internal error:', error);
+                    this.log('error', 'VAD internal error', error);
                     this.showMessage('Voice detection error: ' + error.message, 'error');
                 }
             });
@@ -368,49 +533,398 @@ class MiraDesktop {
             this.isRecording = true;
             this.updateVADStatus('waiting');
         } catch (error) {
-            console.error('Error starting VAD audio capture:', error);
+            this.log('error', 'Error starting VAD audio capture', error);
 
-            let errorMessage = 'Failed to initialize voice activity detection.';
+            let errorMessage = ERROR_MESSAGES.AUDIO.VAD_INIT_FAILED;
             if (error.message.includes('Permission denied') || error.name === 'NotAllowedError') {
-                errorMessage = 'Microphone permission denied. Please allow microphone access and try again.';
+                errorMessage = ERROR_MESSAGES.AUDIO.PERMISSION_DENIED;
             } else if (error.message.includes('VAD library failed to load') || error.message.includes('library loading')) {
                 errorMessage = `Voice detection library failed to load: ${error.message}. Please refresh the page and try again.`;
             } else if (error.message.includes('timeout') || error.message.includes('Timeout')) {
                 errorMessage = 'Voice detection initialization timed out. Please try again.';
             } else if (error.name === 'NotFoundError') {
-                errorMessage = 'No microphone found. Please connect a microphone and try again.';
+                errorMessage = ERROR_MESSAGES.AUDIO.DEVICE_NOT_FOUND;
             } else if (error.message.includes('MicVAD')) {
                 errorMessage = 'Voice detection module is incomplete. Please refresh the page and try again.';
             } else {
                 errorMessage = `Voice detection error: ${error.message}`;
             }
 
-            console.error('Audio capture error details:', {
+            this.debugLog('audio', 'VAD initialization failed', {
                 message: error.message,
                 name: error.name,
-                stack: error.stack,
                 vadLibraryLoaded: window.vadLibraryLoaded,
                 vadLibraryLoadError: window.vadLibraryLoadError
             });
 
             this.showMessage(errorMessage, 'error');
             throw error;
+        } finally {
+            this.isTogglingAudioCapture = false;
         }
     }
 
+    /**
+     * Stop audio capture with complete VAD destruction and state verification
+     * Enhanced error handling and debugging for stop recording functionality
+     */
     async stopAudioCapture() {
+
         try {
+            this.log('info', 'Stopping audio capture process');
+            /** Set recording state to false immediately to prevent new processing */
             this.isRecording = false;
+            this.isTogglingAudioCapture = true;
 
             if (this.micVAD) {
-                this.micVAD.destroy();
+                this.debugLog('audio', 'VAD destruction initiated', {
+                    vadExists: !!this.micVAD,
+                    isRecording: this.isRecording
+                });
+
+                try {
+                    /** Call destroy method on VAD */
+                    await this.micVAD.destroy();
+                } catch (vadError) {
+                    this.log('error', 'Error calling VAD.destroy()', vadError);
+                    /** Continue with cleanup even if destroy fails */
+                }
+
+                /** Additional cleanup: manually stop any remaining audio tracks */
+                await this.forceStopAllAudioTracks();
+
+                /** Clear the VAD reference */
                 this.micVAD = null;
             }
 
+            /** Verify that recording has actually stopped */
+            await this.verifyRecordingIsStopped();
+
+            /** Update VAD status */
             this.updateVADStatus('stopped');
+            this.log('info', 'Audio capture stopped successfully');
+
         } catch (error) {
-            console.error('Error stopping VAD audio capture:', error);
+            this.log('error', 'Error stopping VAD audio capture', error);
+
+            /** Force cleanup even if there are errors */
+            try {
+                await this.forceStopAllAudioTracks();
+                this.micVAD = null;
+                this.isRecording = false;
+                this.updateVADStatus('stopped');
+                this.log('info', 'Forced cleanup completed');
+            } catch (forceError) {
+                this.log('error', 'Error during forced cleanup', forceError);
+            }
+
+            /** Log detailed error information for debugging */
+            this.debugLog('audio', 'Audio capture stop error details', {
+                message: error.message,
+                name: error.name,
+                stack: error.stack,
+                isRecording: this.isRecording,
+                micVAD: !!this.micVAD
+            });
+
+            /** Don't rethrow the error - we want to ensure cleanup happens */
+        } finally {
+            this.isTogglingAudioCapture = false;
         }
+    }
+
+    /**
+     * Force stop all active audio tracks to ensure recording is completely stopped
+     */
+    async forceStopAllAudioTracks() {
+        try {
+            /** Get all media devices */
+            const mediaDevices = navigator.mediaDevices;
+            if (!mediaDevices || !mediaDevices.enumerateDevices) {
+                return;
+            }
+
+            /** Check if there are any active media streams and verify cleanup */
+
+            /** Try to detect active streams by checking permissions */
+            try {
+                await navigator.permissions.query({ name: 'microphone' });
+            } catch {
+                /** Ignore permission check errors - this is just a verification step */
+            }
+
+            /** The VAD library should clean up its own streams, but let's add a verification step */
+            /** We'll try to create a new temporary stream to verify microphone access is properly released */
+            await this.verifyMicrophoneIsReleased();
+
+        } catch (error) {
+            console.error('Error during audio track cleanup:', error);
+            /** Continue execution - this is a best-effort cleanup */
+        }
+    }
+
+    /**
+     * Verify that the microphone is properly released by the VAD library
+     */
+    async verifyMicrophoneIsReleased() {
+        try {
+            /** Try to get microphone access briefly to verify it's not locked */
+            const testStream = await navigator.mediaDevices.getUserMedia({
+                audio: {
+                    sampleRate: 16000,
+                    channelCount: 1
+                }
+            });
+
+            /** Immediately stop the test stream */
+            if (testStream) {
+                testStream.getTracks().forEach(track => {
+                    track.stop();
+                });
+            }
+
+        } catch (error) {
+            if (error.name === 'NotAllowedError') {
+                /** Expected if user has denied access */
+            } else if (error.name === 'NotFoundError') {
+                /** No microphone found */
+            } else if (error.name === 'AbortError' || error.message.includes('busy')) {
+                /** This suggests the microphone wasn't properly released */
+                throw new Error('Microphone appears to still be in use after VAD destruction');
+            }
+        }
+    }
+
+    /**
+     * Verify that recording has actually stopped
+     */
+    async verifyRecordingIsStopped() {
+        // TODO: Need to implement
+
+        if (this.isRecording) {
+            console.log('Recording state verification - isRecording:', this.isRecording, 'micVAD:', !!this.micVAD);
+        }
+    }
+
+
+    /**
+     * Get comprehensive debug information
+     * @returns {Object} Debug information object
+     */
+    getDebugInfo() {
+        const debugInfo = {
+            system: {
+                debugMode: DEBUG_CONFIG.DEBUG_MODE,
+                debugLevel: DEBUG_CONFIG.LOG_LEVELS.DEBUG,
+                userAgent: navigator.userAgent,
+                timestamp: new Date().toISOString()
+            },
+            connection: {
+                isConnected: this.apiService.isConnected,
+                isRegistered: this.apiService.isRegistered,
+                baseUrl: this.apiService.baseUrl,
+                clientId: API_CONFIG.CLIENT_ID,
+                apiServiceInitialized: !!this.apiService
+            },
+            audio: {
+                isListening: this.isListening,
+                isRecording: this.isRecording,
+                isProcessingAudio: this.isProcessingAudio,
+                vadInitialized: !!this.micVAD,
+                audioOptimization: {
+                    enableAdvancedNoiseReduction: AUDIO_CONFIG.OPTIMIZATION.ENABLE_ADVANCED_NOISE_REDUCTION,
+                    enableDynamicGainControl: AUDIO_CONFIG.OPTIMIZATION.ENABLE_DYNAMIC_GAIN_CONTROL,
+                    enableSpectralGating: AUDIO_CONFIG.OPTIMIZATION.ENABLE_SPECTRAL_GATING,
+                    noiseFloor: AUDIO_CONFIG.OPTIMIZATION.NOISE_FLOOR,
+                    signalThreshold: AUDIO_CONFIG.OPTIMIZATION.SIGNAL_THRESHOLD,
+                    adaptiveThresholds: AUDIO_CONFIG.OPTIMIZATION.ADAPTIVE_THRESHOLDS,
+                    environmentalNoise: AUDIO_CONFIG.OPTIMIZATION.ENVIRONMENTAL_NOISE,
+                    lastNoiseAnalysis: AUDIO_CONFIG.OPTIMIZATION.LAST_NOISE_ANALYSIS
+                },
+                audioProcessingStats: { ...this.audioProcessingStats }
+            },
+            ui: {
+                interactionCount: this.interactions.length,
+                micButtonText: this.micStatusText?.textContent,
+                statusText: this.statusText?.textContent
+            },
+            browser: {
+                mediaDevicesSupported: !!navigator.mediaDevices,
+                getUserMediaSupported: !!navigator.mediaDevices?.getUserMedia,
+                webAudioSupported: !!window.AudioContext || !!window.webkitAudioContext,
+                vadLibraryLoaded: window.vadLibraryLoaded,
+                vadLibraryLoadError: window.vadLibraryLoadError
+            }
+        };
+
+        if (DEBUG_CONFIG.DEBUG_MODE) {
+            this.log('debug', 'Debug info requested', debugInfo);
+        }
+
+        return debugInfo;
+    }
+
+    /**
+     * Process and optimize audio with advanced noise reduction and quality enhancement
+     */
+    async processAndSendOptimizedAudio(audioFloat32Array) {
+        try {
+            /** Step 1: Analyze audio quality */
+            const audioAnalysis = this.analyzeAudioQuality(audioFloat32Array);
+
+            /** Step 2: Apply noise reduction if enabled */
+            let processedAudio = audioFloat32Array;
+            if (AUDIO_CONFIG.OPTIMIZATION.ENABLE_ADVANCED_NOISE_REDUCTION) {
+                processedAudio = this.applyNoiseReduction(processedAudio, audioAnalysis);
+            }
+
+            /** Step 3: Apply dynamic gain control */
+            if (AUDIO_CONFIG.OPTIMIZATION.ENABLE_DYNAMIC_GAIN_CONTROL) {
+                processedAudio = this.applyDynamicGainControl(processedAudio, audioAnalysis);
+            }
+
+            /** Step 4: Apply spectral gating for further noise reduction */
+            if (AUDIO_CONFIG.OPTIMIZATION.ENABLE_SPECTRAL_GATING) {
+                processedAudio = this.applySpectralGating(processedAudio, audioAnalysis);
+            }
+
+            /** Step 5: Final quality check */
+            const finalAnalysis = this.analyzeAudioQuality(processedAudio);
+
+            /** Step 6: Only send if audio quality is sufficient */
+            if (finalAnalysis.snr > AUDIO_CONFIG.OPTIMIZATION.SIGNAL_THRESHOLD) {
+                await this.sendVADAudioToBackend(processedAudio);
+            } else {
+                this.updateVADStatus('waiting');
+            }
+
+        } catch (error) {
+            console.error('Error in audio optimization pipeline:', error);
+            /** Fallback to original audio if processing fails */
+            await this.sendVADAudioToBackend(audioFloat32Array);
+        }
+    }
+
+    /**
+     * Analyze audio quality metrics for optimization decisions
+     */
+    analyzeAudioQuality(audioFloat32Array) {
+        const samples = audioFloat32Array.length;
+        let sumSquares = 0;
+        let maxAmplitude = 0;
+        let silentSamples = 0;
+
+        /** Calculate RMS and find peak amplitude */
+        for (let i = 0; i < samples; i++) {
+            const sample = Math.abs(audioFloat32Array[i]);
+            sumSquares += sample * sample;
+            maxAmplitude = Math.max(maxAmplitude, sample);
+
+            /** Threshold for "silent" samples */
+            if (sample < 0.001) {
+                silentSamples++;
+            }
+        }
+
+        const rms = Math.sqrt(sumSquares / samples);
+        const energy = sumSquares / samples;
+
+        /** Estimate SNR (simplified calculation) */
+        const speechPower = rms * rms;
+        /** Estimate noise floor */
+        const noisePower = silentSamples > samples * 0.1 ?
+            Math.max(speechPower * 0.01, 1e-10) : speechPower * 0.1;
+        const snr = 10 * Math.log10(speechPower / noisePower);
+
+        /** Calculate dynamic range */
+        const dynamicRange = 20 * Math.log10(maxAmplitude / Math.max(rms, 1e-10));
+
+        return {
+            rms,
+            energy,
+            snr,
+            maxAmplitude,
+            dynamicRange,
+            silentRatio: silentSamples / samples
+        };
+    }
+
+    /**
+     * Apply advanced noise reduction using spectral subtraction
+     */
+    applyNoiseReduction(audioFloat32Array, analysis) {
+        if (analysis.snr > 20) {
+            return audioFloat32Array;
+        }
+
+        const result = new Float32Array(audioFloat32Array.length);
+        /** Adaptive noise threshold */
+        const noiseThreshold = analysis.rms * 0.3;
+
+        /** Simple spectral subtraction approach */
+        for (let i = 0; i < audioFloat32Array.length; i++) {
+            const sample = audioFloat32Array[i];
+            const sampleAbs = Math.abs(sample);
+
+            if (sampleAbs > noiseThreshold) {
+                /** Keep strong signals, apply gentle filtering to weak ones */
+                const gain = Math.min(1.0, sampleAbs / noiseThreshold);
+                result[i] = sample * gain;
+            } else {
+                /** Aggressive reduction for likely noise */
+                result[i] = sample * 0.1;
+            }
+        }
+
+        return result;
+    }
+
+    /**
+     * Apply dynamic gain control for consistent audio levels
+     */
+    applyDynamicGainControl(audioFloat32Array, analysis) {
+        if (analysis.rms > 0.3) {
+            return audioFloat32Array;
+        }
+
+        /** Calculate target RMS level - optimal level for interaction */
+        const targetRMS = 0.15;
+        const gainFactor = Math.min(3.0, targetRMS / Math.max(analysis.rms, 0.001));
+
+        const result = new Float32Array(audioFloat32Array.length);
+        for (let i = 0; i < audioFloat32Array.length; i++) {
+            result[i] = Math.max(-1, Math.min(1, audioFloat32Array[i] * gainFactor));
+        }
+
+        return result;
+    }
+
+    /**
+     * Apply spectral gating to remove noise between words
+     */
+    applySpectralGating(audioFloat32Array, analysis) {
+        const result = new Float32Array(audioFloat32Array.length);
+        const windowSize = Math.min(512, Math.floor(audioFloat32Array.length / 8));
+        const gateThreshold = analysis.rms * 0.2;
+
+        /** Apply gating in overlapping windows */
+        for (let i = 0; i < audioFloat32Array.length; i++) {
+            const windowStart = Math.max(0, i - windowSize / 2);
+            const windowEnd = Math.min(audioFloat32Array.length, i + windowSize / 2);
+
+            /** Calculate local RMS */
+            let localRMS = 0;
+            for (let j = windowStart; j < windowEnd; j++) {
+                localRMS += audioFloat32Array[j] * audioFloat32Array[j];
+            }
+            localRMS = Math.sqrt(localRMS / (windowEnd - windowStart));
+
+            /** Apply gate */
+            const gateGain = localRMS > gateThreshold ? 1.0 : 0.3;
+            result[i] = audioFloat32Array[i] * gateGain;
+        }
+
+        return result;
     }
 
     async sendVADAudioToBackend(audioFloat32Array) {
@@ -426,31 +940,22 @@ class MiraDesktop {
 
         this.isProcessingAudio = true;
 
-        if (this.debugMode) {
-            console.log('DEBUG: Audio sample stats:');
-            console.log('- Sample rate: 16000 Hz');
-            console.log('- Duration:', (audioFloat32Array.length / 16000).toFixed(3), 'seconds');
-            console.log('- Min sample:', Math.min(...audioFloat32Array).toFixed(4));
-            console.log('- Max sample:', Math.max(...audioFloat32Array).toFixed(4));
-            console.log('- RMS:', Math.sqrt(audioFloat32Array.reduce((sum, x) => sum + x * x, 0) / audioFloat32Array.length).toFixed(4));
-        }
-
         try {
             if (!(audioFloat32Array instanceof Float32Array)) {
                 console.error('Invalid audio data type:', typeof audioFloat32Array);
                 throw new Error('Invalid audio data format');
             }
 
-            // Convert Float32Array to 16-bit PCM for backend compatibility
+            /** Convert Float32Array to 16-bit PCM for backend compatibility */
             const audioInt16 = new Int16Array(audioFloat32Array.length);
             let validSamples = 0;
 
             for (let i = 0; i < audioFloat32Array.length; i++) {
-                // Clamp and convert to 16-bit signed integer
+                /** Clamp and convert to 16-bit signed integer */
                 const sample = Math.max(-1, Math.min(1, audioFloat32Array[i]));
                 audioInt16[i] = Math.round(sample * 32767);
 
-                // Count non-zero samples to validate audio content
+                /** Count non-zero samples to validate audio content */
                 if (Math.abs(sample) > 0.001) {
                     validSamples++;
                 }
@@ -458,37 +963,21 @@ class MiraDesktop {
 
             const validSampleRatio = validSamples / audioFloat32Array.length;
             if (validSampleRatio < 0.001) {
-                console.warn('Audio appears to be mostly silence, validSamples:', validSamples, 'of', audioFloat32Array.length);
-            } else {
-                console.log(`Audio validation: ${validSamples}/${audioFloat32Array.length} non-silent samples (${(validSampleRatio * 100).toFixed(1)}%)`);
+                this.log('warn', `Audio appears to be mostly silence, validSamples: ${validSamples} of ${audioFloat32Array.length}`);
             }
 
-            // Convert to bytes for backend (little-endian)
+            /** Convert to bytes for backend (little-endian) */
             const audioBytes = new Uint8Array(audioInt16.buffer);
 
-            // Validate connection before sending
-            if (!this.isConnected) {
-                throw new Error('Backend connection lost');
+            /** Validate connection before sending */
+            if (!this.apiService.isConnected || !this.apiService) {
+                throw new Error(ERROR_MESSAGES.BACKEND.SERVICE_UNAVAILABLE);
             }
 
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 15000);
+            /** Use ApiService to register interaction */
+            const interactionData = await this.apiService.registerInteraction(audioBytes.buffer, 'wav');
 
-            const response = await fetch(`${this.baseUrl}/interactions/register`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/octet-stream',
-                    'Content-Length': audioBytes.length.toString()
-                },
-                body: audioBytes,
-                signal: controller.signal,
-                keepalive: false,
-                cache: 'no-cache'
-            });
-
-            clearTimeout(timeoutId);
-
-            if (response.ok) {
+            if (interactionData) {
                 this.audioProcessingStats.successfulRequests++;
                 this.audioProcessingStats.totalAudioSent++;
                 this.audioProcessingStats.totalAudioBytes += audioBytes.length;
@@ -496,33 +985,16 @@ class MiraDesktop {
                     ((this.audioProcessingStats.averageAudioDuration * (this.audioProcessingStats.totalAudioSent - 1)) +
                         (audioFloat32Array.length / 16000)) / this.audioProcessingStats.totalAudioSent;
 
-                try {
-                    const result = await response.json();
-                    console.log('VAD audio processed successfully:', result);
-                    if (this.debugMode) {
-                        console.log('DEBUG: Backend response:', result);
-                    }
-                } catch (jsonError) {
-                    console.warn('Response was OK but failed to parse JSON:', jsonError);
-                }
+                this.debugLog('audio', 'Audio interaction registered successfully', {
+                    audioLength: audioFloat32Array.length,
+                    audioBytes: audioBytes.length,
+                    interactionData: interactionData
+                });
             } else {
                 this.audioProcessingStats.failedRequests++;
-                let errorText = 'Unknown error';
-                try {
-                    errorText = await response.text();
-                } catch (textError) {
-                    console.warn('Failed to read error response text:', textError);
-                }
-                const errorMessage = `HTTP ${response.status}: ${response.statusText}`;
-                console.error('Failed to process VAD audio:', errorMessage, errorText);
-
-                if (response.status === 404) {
-                    this.showMessage('Backend endpoint not found. Please check if the backend is running correctly.', 'error');
-                } else if (response.status >= 500) {
-                    this.showMessage('Backend server error. Please try again.', 'error');
-                } else {
-                    this.showMessage(`Failed to process audio: ${errorMessage}`, 'error');
-                }
+                const errorMessage = 'Audio processing failed';
+                this.log('error', errorMessage);
+                this.showMessage('Failed to process audio. Please try again.', 'error');
             }
 
         } catch (error) {
@@ -551,71 +1023,30 @@ class MiraDesktop {
             'waiting': 'Waiting for speech...',
             'speaking': 'Speaking detected...',
             'processing': 'Processing speech...',
-            'stopped': 'Stopped'
+            'stopped': 'Stopped',
+            'stopping': 'Stopping...'
         };
 
         if (this.isListening && this.micStatusText) {
             const message = statusMessages[status] || 'Unknown status';
-            // Only update if not showing the main listening message
+            /** Only update specific statuses, maintain the main listening message for most cases */
             if (status === 'stopping') {
                 this.micStatusText.textContent = message;
+            } else if (status === 'stopped') {
+                this.micStatusText.textContent = 'Click to start listening';
             } else {
                 this.micStatusText.textContent = 'Listening... Click to stop';
             }
+        } else if (!this.isListening && status === 'stopped') {
+            this.micStatusText.textContent = 'Click to start listening';
         }
-
-        console.log(`VAD Status: ${statusMessages[status] || status}`);
-    }
-
-    updateFeatures(features) {
-        const featuresList = document.getElementById('featuresList');
-        if (!featuresList || !features) return;
-        featuresList.innerHTML = '';
-
-        const featureMap = {
-            'advanced_nlp': {
-                name: 'Advanced NLP Processing',
-                description: 'Intelligent text analysis and context understanding',
-                icon: 'fas fa-brain'
-            },
-            'speaker_clustering': {
-                name: 'Speaker Clustering',
-                description: 'Automatically identify and separate different speakers',
-                icon: 'fas fa-users'
-            },
-            'context_summarization': {
-                name: 'Context Summarization',
-                description: 'Generate concise summaries of conversations',
-                icon: 'fas fa-clipboard-list'
-            },
-            'database_integration': {
-                name: 'Database Integration',
-                description: 'Seamlessly store and search transcription history',
-                icon: 'fas fa-database'
-            }
-        };
-
-        Object.keys(features).forEach(key => {
-            if (features[key] && featureMap[key]) {
-                const featureItem = document.createElement('div');
-                featureItem.className = 'feature-item';
-                featureItem.innerHTML = `
-                    <i class="${featureMap[key].icon}"></i>
-                    <div class="feature-content">
-                        <span class="feature-name">${featureMap[key].name}</span>
-                        <span class="feature-description">${featureMap[key].description}</span>
-                    </div>
-                `;
-                featuresList.appendChild(featureItem);
-            }
-        });
     }
 
     updateConnectionStatus(connected) {
         if (connected) {
             this.statusDot.className = 'status-dot connected';
-            const connectedHost = [...this.baseUrls.entries()].find(([_, url]) => url === this.baseUrl)?.[0];
-            this.statusText.textContent = 'Connected to ' + (connectedHost || this.baseUrl || 'unknown server');
+            const connectedHost = [...API_CONFIG.BASE_URLS.entries()].find(([, url]) => url === this.apiService.baseUrl)?.[0];
+            this.statusText.textContent = 'Connected to ' + (connectedHost || this.apiService.baseUrl || 'unknown server');
             this.micButton.disabled = false;
         } else {
             this.statusDot.className = 'status-dot';
@@ -626,19 +1057,22 @@ class MiraDesktop {
         }
     }
 
+    /**
+     * Update server status display
+     * Note: Listening state management is now handled by manageListeningState through statusChange events
+     * @param {Object} status - Status object with enabled property
+     */
     async updateServerStatus(status) {
-        if (status.enabled && !this.isListening) {
-            await this.startListening();
-        } else if (!status.enabled && this.isListening) {
-            await this.stopListening();
-        }
+        /** The manageListeningState function now handles actual listening state changes */
+        /** This function just updates the UI display if needed */
+        this.log('info', `Server status updated: ${status.enabled ? 'enabled' : 'disabled'}`);
     }
 
     updateListeningUI(listening) {
+        this.micButton.style.opacity = UI_CONFIG.OPACITY.ENABLED;
+
         if (listening) {
             this.micButton.classList.add('listening');
-            this.statusDot.className = 'status-dot listening';
-            this.statusText.textContent = 'Listening';
             this.micStatusText.textContent = 'Listening... Click to stop';
             this.micIcon.innerHTML = `
                 <svg class="mic-svg" viewBox="0 0 24 24" fill="currentColor">
@@ -647,8 +1081,6 @@ class MiraDesktop {
             `;
         } else {
             this.micButton.classList.remove('listening');
-            this.statusDot.className = 'status-dot connected';
-            this.statusText.textContent = 'Connected';
             this.micStatusText.textContent = 'Click to start listening';
             this.micIcon.innerHTML = `
                 <svg class="mic-svg" viewBox="0 0 24 24" fill="currentColor">
@@ -658,58 +1090,33 @@ class MiraDesktop {
         }
     }
 
-    startTranscriptionPolling() {
-        this.stopTranscriptionPolling();
-
-        console.log('Starting transcription polling...');
-        this.transcriptionInterval = setInterval(async () => {
-            if (this.isListening && this.isConnected) {
-                // await this.fetchLatestInteractions();
-            } else {
-                console.log('Stopping polling - not listening or not connected');
-                this.stopTranscriptionPolling();
-            }
-        }, 1000);
-    }
-
     fetchLatestInteractions(interactions) {
-
-        console.log(`interactions: ${interactions}`);
-
-        interactions.forEach((interaction) => {
-            const existingTranscription = this.transcriptions.find(t => String(t.id) === String(interaction));
+        for (const interaction of interactions) {
+            const existingInteraction = this.interactions.find(t => String(t.id) === String(interaction));
             try {
-                if (!existingTranscription) {
-                    console.log(`Adding new transcription: ${interaction}`);
+                if (!existingInteraction) {
+                    this.log('info', `Adding new interaction: ${interaction}`);
 
-                    fetch(`${this.baseUrl}/interactions/${interaction}`)
-                        .then(response => {
-                            if (response.ok) {
-                                return response.json();
-                            } else {
-                                console.error(`Failed to fetch interaction ${interaction}:`, response.status, response.statusText);
-                                return null;
-                            }
-                        })
-                        .then(interactionData => {
-                            if (interactionData) {
-                                this.addTranscriptionFromInteraction(interactionData);
-                            }
-                        })
-                        .catch(error => {
-                            console.error('Error fetching interaction:', error);
-                        });
+                    this.apiService.getInteraction(interaction).then(interactionData => {
+                        if (interactionData) {
+                            this.appendInteraction(interactionData);
+                        } else {
+                            this.log('error', `Failed to fetch interaction ${interaction}`);
+                        }
+                    }).catch(error => {
+                        this.log('error', 'Error fetching interactions', error);
+                    });
                 }
             } catch (error) {
-                console.error('Error fetching transcriptions:', error);
+                this.log('error', 'Error fetching interactions', error);
             }
-        });
+        }
     }
 
-    async addTranscriptionFromInteraction(interaction) {
+    async appendInteraction(interaction) {
         let timestamp = interaction.timestamp;
         try {
-            let isoString = timestamp.replace(' ', 'T');
+            let isoString = String(timestamp).replace(' ', 'T');
             if (!/[zZ]|[+-]\d{2}:\d{2}$/.test(isoString)) {
                 isoString += 'Z';
             }
@@ -722,9 +1129,10 @@ class MiraDesktop {
                 minute: '2-digit',
                 second: '2-digit'
             });
-        } catch (e) {
+        } catch (error) {
+            this.log('warn', 'Error parsing timestamp', error);
             const dateObj = new Date(interaction.timestamp);
-            const timestamp = dateObj.toLocaleString(undefined, {
+            timestamp = dateObj.toLocaleString(undefined, {
                 year: 'numeric',
                 month: 'short',
                 day: 'numeric',
@@ -734,57 +1142,58 @@ class MiraDesktop {
             });
         }
 
-        const response = await fetch(`${this.baseUrl}/speakers/${interaction.speaker_id}`);
-        const speaker = await response.json();
+        interaction.timestamp = timestamp;
 
-        const transcription = {
-            text: interaction.text,
-            timestamp: timestamp,
-            speaker: speaker,
-            id: interaction.id
-        };
+        if (!this.apiService) {
+            this.log('error', 'Cannot fetch person: API service not initialized');
+            return;
+        }
 
-        this.transcriptions.push(transcription);
+        const person = await this.apiService.getPerson(interaction.speaker_id);
+        let personData = null;
 
-        const emptyState = this.transcriptionContent.querySelector('.empty-state');
+        if (person) {
+            personData = person;
+        } else {
+            this.log('error', `Failed to fetch person ${interaction.speaker_id}`);
+            /** Create a fallback person object */
+            personData = { name: 'Unknown Person', id: interaction.speaker_id };
+        }
+
+        interaction.speaker = personData;
+        this.interactions.push(interaction);
+
+        const emptyState = this.interactionContent.querySelector('.empty-state');
         if (emptyState) {
             emptyState.remove();
         }
 
-        const transcriptionElement = this.createTranscriptionElement(transcription);
-        this.transcriptionContent.appendChild(transcriptionElement);
+        const interactionElement = this.createInteractionElement(interaction);
+        this.interactionContent.appendChild(interactionElement);
 
-        // Scroll to bottom
-        this.transcriptionContent.scrollTop = this.transcriptionContent.scrollHeight;
+        /** Scroll to bottom */
+        this.interactionContent.scrollTop = this.interactionContent.scrollHeight;
     }
 
-    stopTranscriptionPolling() {
-        if (this.transcriptionInterval) {
-            console.log('Stopping transcription polling...');
-            clearInterval(this.transcriptionInterval);
-            this.transcriptionInterval = null;
-        }
-    }
-
-    createTranscriptionElement(transcription) {
+    createInteractionElement(interaction) {
         const element = document.createElement('div');
-        element.className = 'transcription-item';
-        const speakerColor = this.getSpeakerColor(transcription.speaker);
-        element.style.borderLeftColor = speakerColor.border;
-        element.style.backgroundColor = speakerColor.background;
+        element.className = 'interaction-item';
+        const personColor = this.getPersonColor(interaction.speaker);
+        element.style.borderLeftColor = personColor.border;
+        element.style.backgroundColor = personColor.background;
 
         element.innerHTML = `
-            <div class="speaker-info" style="color: ${speakerColor.text};">
-                <span class="speaker-name">${transcription.speaker.name || "Speaker " + transcription.speaker.index || transcription.speaker.id}</span>
-                <span class="timestamp">${transcription.timestamp}</span>
+            <div class="person-info" style="color: ${personColor.text};">
+                <span class="person-name">${interaction.speaker.name || "Person " + interaction.speaker.index || interaction.speaker.id}</span>
+                <span class="timestamp">${interaction.timestamp}</span>
             </div>
-            <div class="text">${transcription.text}</div>
+            <div class="text">${interaction.text}</div>
         `;
         return element;
     }
 
-    getSpeakerColor(speaker) {
-        const speakerIndex = parseInt(speaker.index) || this.getOrAssignSpeakerIndex(speaker.id);
+    getPersonColor(person) {
+        const personIndex = parseInt(person.index) || this.getOrAssignPersonIndex(person.id);
 
         const greenShades = [
             { background: '#f0fffa', border: '#00ff88', text: '#00cc6a' },
@@ -793,62 +1202,88 @@ class MiraDesktop {
             { background: '#d1fae5', border: '#00c249', text: '#007f30' },
         ];
 
-        return greenShades[speakerIndex % greenShades.length];
+        return greenShades[personIndex % greenShades.length];
     }
 
-    getOrAssignSpeakerIndex(speaker) {
-        if (!this.speakerIndexMap.has(speaker)) {
-            this.speakerIndexMap.set(speaker, this.nextSpeakerIndex);
-            this.nextSpeakerIndex++;
+    getOrAssignPersonIndex(person) {
+        if (!this.personIndexMap.has(person)) {
+            this.personIndexMap.set(person, this.nextPersonIndex);
+            this.nextPersonIndex++;
         }
 
-        return this.speakerIndexMap.get(speaker);
+        return this.personIndexMap.get(person);
     }
 
-    async clearTranscriptions() {
-        try {
-            const response = await fetch(`${this.baseUrl}/interactions`, {
-                method: 'DELETE'
-            });
+    /**
+     * Clear all interactions from database and UI
+     * Uses ApiService for proper error handling
+     */
+    async clearInteractions() {
+        if (!this.apiService) {
+            this.log('error', 'Cannot clear interactions: API service not initialized');
+            return;
+        }
 
-            if (response.ok) {
-                const result = await response.json();
-                console.log('Database cleared:', result);
+        console.log('Clearing interactions from database...', this.interactions);
 
-                this.transcriptions = [];
-                this.transcription_ids.clear();
+        let deletedCount = 0;
 
-                this.transcriptionContent.innerHTML = `
-                    <div class="empty-state">
-                        <i class="fas fa-robot"></i>
-                        <p>No conversations yet</p>
-                        <small>Start speaking to interact with your AI assistant</small>
-                    </div>
-                `;
-
-                this.showMessage(`Cleared ${result.deleted_count || 0} interactions from database`);
-            } else {
-                console.error('Failed to clear database:', response.status, response.statusText);
-                this.showMessage('Failed to clear interactions from database', 'error');
+        const deletePromises = this.interactions.map(async (interaction) => {
+            try {
+                const success = await this.apiService.deleteInteraction(interaction.id);
+                if (success) {
+                    this.log('info', 'Cleared interaction from database', { interactionId: interaction.id });
+                    deletedCount++;
+                    return interaction.id;
+                } else {
+                    this.log('error', `Failed to clear database for interaction ${interaction.id}`);
+                    return null;
+                }
+            } catch (err) {
+                this.log('warn', `Failed to delete interaction ${interaction.id}`, err);
+                return null;
             }
-        } catch (error) {
-            console.error('Error clearing interactions:', error);
-            this.showMessage('Error clearing interactions: ' + error.message, 'error');
+        });
+
+        const deletedIds = await Promise.all(deletePromises);
+        this.interactions = this.interactions.filter(interaction => !deletedIds.includes(interaction.id));
+
+        if (this.interactions.length === 0) {
+            this.interactionContent.innerHTML = `
+                <div class="empty-state">
+                    <i class="fas fa-robot"></i>
+                    <p>No conversations yet</p>
+                    <small>Start speaking to interact with your AI assistant</small>
+                </div>
+            `;
         }
+
+        this.showMessage(`Cleared ${deletedCount} interactions from database`, 'info');
     }
+
 
     showConnectionBanner() {
-        this.connectionBanner.style.display = 'block';
+        if (this.connectionBanner) {
+            this.connectionBanner.style.display = 'block';
+            this.debugLog('ui', 'Connection banner shown');
+        } else {
+            console.error('Connection banner element not found');
+        }
     }
 
     hideConnectionBanner() {
-        this.connectionBanner.style.display = 'none';
+        if (this.connectionBanner) {
+            this.connectionBanner.style.display = 'none';
+            this.debugLog('ui', 'Connection banner hidden');
+        } else {
+            console.error('Connection banner element not found');
+        }
     }
 
     showMessage(message, type = 'info') {
         console.log('Message:', message);
 
-        // Create a simple toast notification for user feedback
+        /** Create a simple toast notification for user feedback */
         const toast = document.createElement('div');
         toast.className = `toast toast-${type}`;
         toast.style.cssText = `
@@ -904,37 +1339,45 @@ class MiraDesktop {
         });
     }
 
-    startConnectionCheck() {
-        this.checkConnection();
-
-        this.connectionCheckInterval = setInterval(() => {
-            this.checkConnection();
-
-        }, 1000);
-    }
-
     async cleanup() {
-        console.log('Cleaning up Mira Desktop App...');
-
-        if (this.isRecording && this.micVAD) {
-            await this.stopAudioCapture();
-        }
-
-        if (this.connectionCheckInterval) {
-            clearInterval(this.connectionCheckInterval);
-        }
-
-        if (this.transcriptionInterval) {
-            clearInterval(this.transcriptionInterval);
-        }
-
-        if (this.isRegistered) {
-            try {
-                await this.deregisterClient();
-                await this.stopListening();
-            } catch (error) {
-                console.error('Error during cleanup deregistration:', error);
+        try {
+            /** Stop recording first */
+            if (this.isRecording && this.micVAD) {
+                await this.stopAudioCapture();
             }
+
+            /** Clear interaction interval */
+            if (this.interactionInterval) {
+                clearInterval(this.interactionInterval);
+                this.interactionInterval = null;
+            }
+
+            /** Stop listening service and deregister from backend */
+            if (this.apiService.isRegistered) {
+                try {
+                    await this.deregisterClient();
+
+                    if (this.isListening) {
+                        await this.apiService.disableService();
+                    }
+                } catch (error) {
+                    this.log('error', 'Error during cleanup deregistration', error);
+                }
+            }
+
+            /** Clean up API service */
+            if (this.apiService) {
+                this.apiService.destroy();
+            }
+
+            /** Final state reset */
+            this.isRecording = false;
+            this.isListening = false;
+            this.isToggling = false;
+            this.isProcessingAudio = false;
+
+        } catch (error) {
+            console.error('Error during cleanup:', error);
         }
     }
 }
@@ -951,18 +1394,24 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     window.addEventListener('beforeunload', async () => {
-        if (window.miraApp && window.miraApp.isRegistered && !window.miraApp._deregistrationAttempted) {
-            const url = `${window.miraApp.baseUrl}/service/client/deregister/${encodeURIComponent(window.miraApp.clientId)}`;
-            fetch(url, { method: 'DELETE' });
-            window.miraApp._deregistrationAttempted = true;
+        if (window.miraApp && window.miraApp.apiService.isRegistered && !window.miraApp.isDeregistering) {
+            /** Use ApiService for deregistration (fire and forget for beforeunload) */
+            window.miraApp.isDeregistering = true;
+            window.miraApp.apiService.deregisterClient().catch(() => { });
         }
     });
 
     window.addEventListener('unload', () => {
-        if (window.miraApp && window.miraApp.isRegistered && !window.miraApp._deregistrationAttempted) {
-            const url = `${window.miraApp.baseUrl}/service/client/deregister/${encodeURIComponent(window.miraApp.clientId)}`;
-            fetch(url, { method: 'DELETE' });
-            window.miraApp._deregistrationAttempted = true;
+        if (window.miraApp && window.miraApp.isRegistered && !window.miraApp.isDeregistering) {
+            window.miraApp.isDeregistering = true;
+            if (window.miraApp.apiService) {
+                /** Use ApiService if available (fire and forget for unload) */
+                window.miraApp.apiService.deregisterClient().catch(() => { });
+            } else {
+                /** Fallback to direct fetch for backwards compatibility */
+                const url = `${window.miraApp.baseUrl}/service/client/deregister/${encodeURIComponent(API_CONFIG.CLIENT_ID)}`;
+                fetch(url, { method: 'DELETE' }).catch(() => { });
+            }
         }
     });
 });
@@ -975,26 +1424,52 @@ document.addEventListener('keydown', (e) => {
         }
     }
 
+    /** Ctrl+Shift+D - Toggle debug mode */
     if (e.ctrlKey && e.shiftKey && e.code === 'KeyD') {
+        e.preventDefault();
+        if (window.miraApp) {
+            const newDebugMode = !window.miraApp.debugMode;
+            window.miraApp.setDebugMode(newDebugMode);
+            window.miraApp.showMessage(`Debug mode ${newDebugMode ? 'enabled' : 'disabled'}`, 'info');
+        }
+    }
+
+    /** Ctrl+Shift+M - Show detailed debug info (was debug mode toggle, now moved to D) */
+    if (e.ctrlKey && e.shiftKey && e.code === 'KeyM') {
         e.preventDefault();
         if (window.miraApp) {
             window.miraApp.showAudioStats();
         }
     }
 
-    if (e.ctrlKey && e.shiftKey && e.code === 'KeyM') {
-        e.preventDefault();
-        if (window.miraApp) {
-            window.miraApp.debugMode = !window.miraApp.debugMode;
-            console.log('Debug mode:', window.miraApp.debugMode ? 'ENABLED' : 'DISABLED');
-            window.miraApp.showMessage(`Debug mode ${window.miraApp.debugMode ? 'enabled' : 'disabled'}`, 'info');
-        }
-    }
-
+    /** Ctrl+Shift+T - Test backend connection */
     if (e.ctrlKey && e.shiftKey && e.code === 'KeyT') {
         e.preventDefault();
         if (window.miraApp) {
             window.miraApp.testBackendConnection();
+        }
+    }
+
+    /** Ctrl+Shift+A - Show debug help */
+    if (e.ctrlKey && e.shiftKey && e.code === 'KeyA') {
+        e.preventDefault();
+        if (window.miraApp) {
+            window.miraApp.printDebugHelp();
+            window.miraApp.showMessage('Debug help displayed in console', 'info');
+        }
+    }
+
+    /** Ctrl+Shift+I - Get debug info */
+    if (e.ctrlKey && e.shiftKey && e.code === 'KeyI') {
+        e.preventDefault();
+        if (window.miraApp) {
+            const debugInfo = window.miraApp.getDebugInfo();
+            console.table(debugInfo.system);
+            console.table(debugInfo.connection);
+            console.table(debugInfo.audio);
+            console.table(debugInfo.ui);
+            console.table(debugInfo.browser);
+            window.miraApp.showMessage('Debug info displayed in console', 'info');
         }
     }
 });

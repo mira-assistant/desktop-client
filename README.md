@@ -1,14 +1,14 @@
 # Mira Desktop Application
 
-A modern, cross-platform desktop application for real-time voice transcription using Whisper Live technology.
+A modern, cross-platform desktop application for real-time voice interaction using Whisper Live technology.
 
 ## Features
 
 - **Modern UI**: Clean, professional interface with intuitive design
-- **Real-time Transcription**: Live voice-to-text conversion powered by Whisper
+- **Real-time Interaction**: Live voice-to-text conversion powered by Whisper
 - **Cross-platform**: Compatible with macOS and Windows
 - **Visual Feedback**: Animated microphone button with status indicators
-- **Live Updates**: Real-time transcription display with timestamps
+- **Live Updates**: Real-time interaction display with timestamps
 - **Keyboard Shortcuts**: Space bar to toggle listening
 
 ## Screenshots
@@ -16,8 +16,8 @@ A modern, cross-platform desktop application for real-time voice transcription u
 ### Application Interface
 ![Mira Desktop Interface](https://github.com/user-attachments/assets/bbdf4975-3426-424d-a5c2-9dc7c761842a)
 
-### Live Transcription in Action
-![Live Transcription](https://github.com/user-attachments/assets/bf3d7c65-eac4-40ea-931b-69f4e6f57fba)
+### Live Interaction in Action
+![Live Interaction](https://github.com/user-attachments/assets/bf3d7c65-eac4-40ea-931b-69f4e6f57fba)
 
 ## Installation
 
@@ -46,8 +46,8 @@ A modern, cross-platform desktop application for real-time voice transcription u
 1. **Start Backend**: Ensure the Mira backend server is running on `http://localhost:8000`
 2. **Launch App**: Run `npm start` to open the desktop application
 3. **Connect**: The app will automatically attempt to connect to the backend
-4. **Start Listening**: Click the large circular microphone button to begin transcription
-5. **View Transcriptions**: Live transcriptions will appear in the right panel
+4. **Start Listening**: Click the large circular microphone button to begin interaction
+5. **View Interactions**: Live interactions will appear in the right panel
 6. **Stop Listening**: Click the button again (now red with stop icon) to stop
 
 ## Keyboard Shortcuts
@@ -61,7 +61,7 @@ A modern, cross-platform desktop application for real-time voice transcription u
 - **Header**: App title, version, and connection status
 - **Microphone Button**: Large circular button in center with visual feedback
 - **Status Indicator**: Shows connection and listening status
-- **Transcription Panel**: Right-side panel showing live transcriptions
+- **Interaction Panel**: Right-side panel showing live interactions
 - **Connection Banner**: Warning banner when backend is unavailable
 
 ### Button States
@@ -118,6 +118,32 @@ npm run start-dev
 
 This runs the application with development tools enabled.
 
+### Testing
+
+The application includes a comprehensive test suite with 67 tests across 5 test files:
+
+```bash
+# Run all tests
+npm test
+
+# Run tests with coverage report
+npm run test:coverage
+
+# Run tests in watch mode for development
+npm run test:watch
+```
+
+**Note**: Tests are designed to work independently of the backend service. All HTTP requests are mocked, so tests pass even when the backend is unavailable or in development.
+
+Test coverage includes:
+- Configuration constants validation
+- Data model classes (Person, Interaction, Conversation, Action)
+- API service functionality with mocked HTTP requests
+- Integration testing of component interactions
+- Utility functions and core logic
+
+For detailed test documentation, see `tests/README.md`.
+
 ## Architecture
 
 The desktop application is built using:
@@ -126,7 +152,7 @@ The desktop application is built using:
 - **Professional Design**: Google Fonts, Font Awesome icons
 - **Responsive Layout**: Adaptive design for different screen sizes
 
-The app communicates with the existing Python backend via HTTP APIs, maintaining separation of concerns and reusing existing transcription functionality.
+The app communicates with the existing Python backend via HTTP APIs, maintaining separation of concerns and reusing existing interaction functionality.
 
 ## Troubleshooting
 
