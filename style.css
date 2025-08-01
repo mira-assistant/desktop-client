@@ -64,6 +64,37 @@ body {
     gap: 16px;
 }
 
+.client-name-section {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.client-name-section label {
+    font-size: 14px;
+    font-weight: 600;
+    color: #00cc6a;
+}
+
+.client-name-section input {
+    padding: 6px 10px;
+    border: 1px solid #80ffdb;
+    border-radius: 12px;
+    background: #f0fffa;
+    color: #333;
+    font-size: 14px;
+    font-family: 'Montserrat', sans-serif;
+    width: 140px;
+    transition: all 0.3s ease;
+}
+
+.client-name-section input:focus {
+    outline: none;
+    border-color: #00cc6a;
+    background: #ffffff;
+    box-shadow: 0 0 0 2px rgba(0, 204, 106, 0.2);
+}
+
 .status-indicator {
     display: flex;
     align-items: center;

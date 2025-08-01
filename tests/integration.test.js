@@ -5,7 +5,7 @@
 
 import { ApiService } from '../api.js';
 import { Interaction, Conversation } from '../models.js';
-import { API_CONFIG, AUDIO_CONFIG, ERROR_MESSAGES } from '../constants.js';
+import { AUDIO_CONFIG, ERROR_MESSAGES } from '../constants.js';
 
 // Mock fetch for all integration tests
 global.fetch = jest.fn();
@@ -201,8 +201,8 @@ describe('Desktop Client Integration Tests', () => {
 
     describe('Configuration Integration', () => {
         test('should use configuration values consistently', () => {
-            // Test that API service uses configuration from constants
-            expect(apiService.clientId).toBe(API_CONFIG.CLIENT_ID);
+            // Test that API service uses default client ID (now dynamic, not from constants)
+            expect(apiService.clientId).toBe('desktop-client');
 
             // Test that audio configuration is valid
             expect(AUDIO_CONFIG.VAD_THRESHOLDS.POSITIVE_SPEECH).toBeGreaterThan(0);

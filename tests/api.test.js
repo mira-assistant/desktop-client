@@ -30,11 +30,10 @@ describe('ApiService', () => {
     describe('Constructor and Initialization', () => {
         test('should initialize with default values', () => {
             expect(apiService.baseUrl).toBeNull();
-            expect(apiService.clientId).toBe('Mira Desktop App');
+            expect(apiService.clientId).toBe('desktop-client');
             expect(apiService.isConnected).toBe(false);
             expect(apiService.isRegistered).toBe(false);
             expect(apiService.recentInteractionIds).toBeInstanceOf(Set);
-            expect(apiService.features).toEqual({});
         });
 
         test('should extend EventTarget', () => {
@@ -51,8 +50,7 @@ describe('ApiService', () => {
             fetch.mockResolvedValueOnce({
                 ok: true,
                 json: async () => ({
-                    status: 'healthy',
-                    features: { transcription: true, voice_analysis: true }
+                    status: 'healthy'
                 })
             });
 
@@ -85,7 +83,7 @@ describe('ApiService', () => {
             // Mock successful connection
             fetch.mockResolvedValueOnce({
                 ok: true,
-                json: async () => ({ status: 'healthy', features: {} })
+                json: async () => ({ status: 'healthy' })
             });
 
             await apiService.checkConnection();
@@ -254,8 +252,7 @@ describe('ApiService', () => {
                 ok: true,
                 json: () => Promise.resolve({ 
                     enabled: true,
-                    recent_interactions: [],
-                    features: {}
+                    recent_interactions: []
                 })
             });
 
@@ -268,8 +265,7 @@ describe('ApiService', () => {
                 ok: true,
                 json: () => Promise.resolve({ 
                     enabled: false,
-                    recent_interactions: [],
-                    features: {}
+                    recent_interactions: []
                 })
             });
 
@@ -285,8 +281,7 @@ describe('ApiService', () => {
                 ok: true,
                 json: () => Promise.resolve({ 
                     enabled: true,
-                    recent_interactions: [],
-                    features: {}
+                    recent_interactions: []
                 })
             });
 
@@ -298,8 +293,7 @@ describe('ApiService', () => {
                 ok: true,
                 json: () => Promise.resolve({ 
                     enabled: false,
-                    recent_interactions: [],
-                    features: {}
+                    recent_interactions: []
                 })
             });
 
@@ -321,16 +315,14 @@ describe('ApiService', () => {
                     ok: true,
                     json: () => Promise.resolve({ 
                         enabled: true,
-                        recent_interactions: [],
-                        features: {}
+                        recent_interactions: []
                     })
                 })
                 .mockResolvedValueOnce({
                     ok: true,
                     json: () => Promise.resolve({ 
                         enabled: true,  // Same status, no event should be emitted
-                        recent_interactions: [],
-                        features: {}
+                        recent_interactions: []
                     })
                 });
 
@@ -347,6 +339,42 @@ describe('ApiService', () => {
             apiService.stopHealthChecking();
             
             expect(apiService.healthCheckInterval).toBeNull();
+        });
+    });
+
+    describe('Client ID Management', () => {
+        beforeEach(() => {
+            jest.clearAllMocks();
+        });
+
+        test('should update client ID when not connected', async () => {
+            const result = await apiService.updateClientId('new-client-name');
+            
+            expect(result).toBe(true);
+            expect(apiService.clientId).toBe('new-client-name');
+        });
+
+        test('should not update client ID to empty string', async () => {
+            const oldClientId = apiService.clientId;
+            const result = await apiService.updateClientId('');
+            
+            expect(result).toBe(false);
+            expect(apiService.clientId).toBe(oldClientId);
+        });
+
+        test('should trim whitespace from client ID', async () => {
+            const result = await apiService.updateClientId('  spaced-name  ');
+            
+            expect(result).toBe(true);
+            expect(apiService.clientId).toBe('spaced-name');
+        });
+
+        test('should return true for same client ID', async () => {
+            const currentId = apiService.clientId;
+            const result = await apiService.updateClientId(currentId);
+            
+            expect(result).toBe(true);
+            expect(apiService.clientId).toBe(currentId);
         });
     });
 });

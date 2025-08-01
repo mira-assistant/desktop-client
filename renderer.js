@@ -67,13 +67,12 @@ class MiraDesktop {
     setupApiEventListeners() {
         /** Listen for connection changes */
         this.apiService.addEventListener('connectionChange', (event) => {
-            const { connected, hostName, url, features } = event.detail;
+            const { connected, hostName, url } = event.detail;
             
             if (connected) {
                 this.isConnected = true;
                 this.updateConnectionStatus(true);
                 this.hideConnectionBanner();
-                this.updateFeatures(features);
                 
                 /** Log successful connection */
                 this.log('info', `Connected to ${hostName} at ${url}`);
@@ -113,12 +112,14 @@ class MiraDesktop {
         this.connectionBanner = document.getElementById('connectionBanner');
         this.retryButton = document.getElementById('retryButton');
         this.rippleEffect = document.getElementById('rippleEffect');
+        this.clientNameInput = document.getElementById('clientNameInput');
     }
 
     setupEventListeners() {
         this.micButton.addEventListener('click', () => this.toggleListening());
         this.clearButton.addEventListener('click', () => this.clearTranscriptions());
         this.retryButton.addEventListener('click', () => this.apiService.checkConnection());
+        this.clientNameInput.addEventListener('change', (e) => this.handleClientNameChange(e.target.value));
 
         document.addEventListener('keydown', (e) => {
             if (e.key === ' ' && !e.target.matches('input, textarea')) {
@@ -126,6 +127,32 @@ class MiraDesktop {
                 this.toggleListening();
             }
         });
+    }
+
+    /**
+     * Handle client name change from input field
+     * @param {string} newClientName - New client name
+     */
+    async handleClientNameChange(newClientName) {
+        if (!newClientName || newClientName.trim() === '') {
+            /** Reset to current client ID if empty */
+            this.clientNameInput.value = this.apiService.clientId;
+            return;
+        }
+
+        const success = await this.apiService.updateClientId(newClientName.trim());
+        if (success) {
+            this.log('info', `Client name updated to: ${newClientName.trim()}`);
+            this.debugLog('client', 'Client name changed successfully', {
+                newClientName: newClientName.trim(),
+                connected: this.isConnected
+            });
+        } else {
+            /** Revert input on failure */
+            this.clientNameInput.value = this.apiService.clientId;
+            this.log('warn', 'Failed to update client name - reverted to previous name');
+            this.showMessage('Failed to update client name', 'error');
+        }
     }
 
     /**
@@ -333,60 +360,30 @@ class MiraDesktop {
     }
 
     /**
-     * Stop listening service with backend disable and audio cleanup
-     * Uses ApiService for proper error handling and retry logic
+     * Stop listening service by sending disable request to backend
+     * The actual frontend disabling will be handled by health checks detecting status change
      */
     async stopListening() {
         try {
-            /** First, stop audio capture to ensure recording stops immediately */
-            await this.stopAudioCapture();
-
-            /** Send disable request to backend using ApiService */
+            /** Only send disable request to backend */
             const success = await this.apiService.disableService();
             
             if (success) {
-                /** Update states only after successful backend confirmation */
-                this.isListening = false;
-                this.updateListeningUI(false);
-                this.stopTranscriptionPolling();
-                this.log('info', SUCCESS_MESSAGES.AUDIO_STOP);
-                this.debugLog('audio', 'Listening stopped successfully', {
-                    serviceDisabled: true,
-                    vadDestroyed: !this.micVAD
+                this.log('info', 'Disable request sent to backend successfully');
+                this.debugLog('audio', 'Backend disable request completed', {
+                    backendDisabled: true
                 });
             } else {
-                /** Even if backend fails, ensure local state is consistent */
-                this.isListening = false;
-                this.updateListeningUI(false);
-                this.stopTranscriptionPolling();
-                
                 /** Show user-friendly error message */
                 this.showMessage(
-                    'Audio recording stopped, but backend communication failed. Please check your connection.', 
+                    'Failed to send disable request to backend. Please check your connection.', 
                     'warning'
                 );
-                this.log('warn', 'Backend stop request failed but local cleanup completed');
+                this.log('warn', 'Backend disable request failed');
             }
         } catch (error) {
-            this.log('error', 'Error stopping listening', error);
-            
-            /** Ensure cleanup happens even if there are errors */
-            try {
-                /** Force stop audio capture if not already done */
-                await this.stopAudioCapture();
-                
-                /** Update states to stopped regardless of backend status */
-                this.isListening = false;
-                this.updateListeningUI(false);
-                this.stopTranscriptionPolling();
-            } catch (cleanupError) {
-                this.log('error', 'Error during forced stop cleanup', cleanupError);
-            }
-            
-            /** Show user-friendly error message */
-            this.showMessage('Error stopping recording: ' + error.message, 'error');
-            
-            /** Don't rethrow - we want to ensure the UI is updated */
+            this.log('error', 'Error sending disable request to backend', error);
+            this.showMessage('Error communicating with backend', 'error');
         }
     }
 
@@ -1169,50 +1166,6 @@ Debug Shortcuts:
         } else if (!this.isListening && status === 'stopped') {
             this.micStatusText.textContent = 'Click to start listening';
         }
-    }
-
-    updateFeatures(features) {
-        const featuresList = document.getElementById('featuresList');
-        if (!featuresList || !features) return;
-        featuresList.innerHTML = '';
-
-        const featureMap = {
-            'advanced_nlp': {
-                name: 'Advanced NLP Processing',
-                description: 'Intelligent text analysis and context understanding',
-                icon: 'fas fa-brain'
-            },
-            'speaker_clustering': {
-                name: 'Speaker Clustering',
-                description: 'Automatically identify and separate different speakers',
-                icon: 'fas fa-users'
-            },
-            'context_summarization': {
-                name: 'Context Summarization',
-                description: 'Generate concise summaries of conversations',
-                icon: 'fas fa-clipboard-list'
-            },
-            'database_integration': {
-                name: 'Database Integration',
-                description: 'Seamlessly store and search transcription history',
-                icon: 'fas fa-database'
-            }
-        };
-
-        Object.keys(features).forEach(key => {
-            if (features[key] && featureMap[key]) {
-                const featureItem = document.createElement('div');
-                featureItem.className = 'feature-item';
-                featureItem.innerHTML = `
-                    <i class="${featureMap[key].icon}"></i>
-                    <div class="feature-content">
-                        <span class="feature-name">${featureMap[key].name}</span>
-                        <span class="feature-description">${featureMap[key].description}</span>
-                    </div>
-                `;
-                featuresList.appendChild(featureItem);
-            }
-        });
     }
 
     updateConnectionStatus(connected) {

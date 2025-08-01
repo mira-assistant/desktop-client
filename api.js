@@ -14,12 +14,11 @@ export class ApiService extends EventTarget {
     constructor() {
         super();
         this.baseUrl = null;
-        this.clientId = API_CONFIG.CLIENT_ID;
+        this.clientId = 'desktop-client'; // Default client ID
         this.isConnected = false;
         this.isRegistered = false;
         this.recentInteractionIds = new Set();
         this.healthCheckInterval = null;
-        this.features = {};
         this.serviceEnabled = null; // Track service enabled state
         
         /** Start automatic health checking */
@@ -82,9 +81,6 @@ export class ApiService extends EventTarget {
                         this.updateRecentInteractions(healthData.recent_interactions);
                     }
 
-                    /** Update features */
-                    this.features = healthData.features || {};
-
                     /** Check for service status changes and emit event if changed */
                     const currentServiceEnabled = healthData.enabled !== undefined ? healthData.enabled : true;
                     if (this.serviceEnabled !== null && this.serviceEnabled !== currentServiceEnabled) {
@@ -97,7 +93,7 @@ export class ApiService extends EventTarget {
                     /** Emit connection change event if status changed */
                     if (!wasConnected) {
                         this.dispatchEvent(new CustomEvent('connectionChange', {
-                            detail: { connected: true, hostName, url, features: this.features }
+                            detail: { connected: true, hostName, url }
                         }));
                     }
 
@@ -195,6 +191,59 @@ export class ApiService extends EventTarget {
     async healthCheck() {
         const response = await this.makeRequest(API_ENDPOINTS.HEALTH_CHECK, { method: 'GET' });
         return response.success ? response.data : null;
+    }
+
+    /**
+     * Update client ID with proper deregistration and re-registration
+     * @param {string} newClientId - New client identifier
+     * @returns {Promise<boolean>} True if client ID updated successfully
+     */
+    async updateClientId(newClientId) {
+        if (!newClientId || newClientId.trim() === '') {
+            return false;
+        }
+
+        const oldClientId = this.clientId;
+        const trimmedClientId = newClientId.trim();
+        
+        /** No change needed */
+        if (trimmedClientId === oldClientId) {
+            return true;
+        }
+
+        try {
+            /** If currently registered, deregister old client first */
+            if (this.isRegistered && this.isConnected) {
+                await this.deregisterClient();
+            }
+
+            /** Update to new client ID */
+            this.clientId = trimmedClientId;
+
+            /** If connected, register with new client ID */
+            if (this.isConnected) {
+                const registered = await this.registerClient();
+                if (registered) {
+                    this.dispatchEvent(new CustomEvent('clientIdChanged', {
+                        detail: { oldClientId, newClientId: trimmedClientId }
+                    }));
+                    return true;
+                }
+            } else {
+                /** Not connected, just update the ID */
+                this.dispatchEvent(new CustomEvent('clientIdChanged', {
+                    detail: { oldClientId, newClientId: trimmedClientId }
+                }));
+                return true;
+            }
+        } catch (error) {
+            /** Revert on failure */
+            this.clientId = oldClientId;
+            console.warn('Failed to update client ID:', error.message);
+            return false;
+        }
+
+        return false;
     }
 
     /**
