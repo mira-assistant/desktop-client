@@ -3,7 +3,7 @@ import { ApiService } from './api.js';
 
 /**
  * MiraDesktop - Main application class for the Mira Desktop Client
- * Handles audio recording, transcription, and backend communication
+ * Handles audio recording, interaction, and backend communication
  */
 class MiraDesktop {
     /**
@@ -19,9 +19,8 @@ class MiraDesktop {
         this.isProcessingAudio = false;
         this.isDeregistering = false;
 
-        /** Transcription data */
-        this.transcriptions = [];
-        this.transcription_ids = new Set();
+        /** Interaction data */
+        this.interactions = [];
 
         /** Person management */
         this.personIndexMap = new Map();
@@ -107,7 +106,7 @@ class MiraDesktop {
         this.micStatusText = document.getElementById('micStatusText');
         this.statusDot = document.getElementById('statusDot');
         this.statusText = document.getElementById('statusText');
-        this.transcriptionContent = document.getElementById('transcriptionContent');
+        this.interactionContent = document.getElementById('interactionContent');
         this.clearButton = document.getElementById('clearButton');
         this.connectionBanner = document.getElementById('connectionBanner');
         this.retryButton = document.getElementById('retryButton');
@@ -123,11 +122,10 @@ class MiraDesktop {
     async manageListeningState(enabled) {
         try {
             if (enabled && !this.isListening) {
-                /** Enable listening: start audio capture and transcription */
+                /** Enable listening: start audio capture and interaction */
                 await this.startAudioCapture();
                 this.isListening = true;
                 this.updateListeningUI(true);
-                this.startTranscriptionPolling();
                 this.log('info', SUCCESS_MESSAGES.AUDIO_START);
                 this.debugLog('audio', 'Listening enabled via state management', {
                     serviceEnabled: true,
@@ -138,7 +136,6 @@ class MiraDesktop {
                 await this.stopAudioCapture();
                 this.isListening = false;
                 this.updateListeningUI(false);
-                this.stopTranscriptionPolling();
                 this.log('info', 'Listening disabled via state management');
                 this.debugLog('audio', 'Listening disabled via state management', {
                     serviceEnabled: false,
@@ -152,14 +149,14 @@ class MiraDesktop {
                 await this.stopAudioCapture();
                 this.isListening = false;
                 this.updateListeningUI(false);
-                this.stopTranscriptionPolling();
+                this.stopInteractionPolling();
             }
         }
     }
 
     setupEventListeners() {
         this.micButton.addEventListener('click', () => this.toggleListening());
-        this.clearButton.addEventListener('click', () => this.clearTranscriptions());
+        this.clearButton.addEventListener('click', () => this.clearInteractions());
         this.retryButton.addEventListener('click', () => this.handleRetryConnection());
         this.clientNameInput.addEventListener('keydown', (e) => {
             if (e.key === 'Enter') {
@@ -343,7 +340,6 @@ class MiraDesktop {
         }
 
         this.isToggling = true;
-        // const originalButtonText = this.micStatusText.textContent;
 
         try {
             /** Provide immediate UI feedback */
@@ -456,7 +452,7 @@ class MiraDesktop {
 
                 redemptionFrames: redemptionFrames,
 
-                /** Audio quality settings optimized for transcription */
+                /** Audio quality settings optimized for interaction */
                 frameSamples: frameSamples,
                 preSpeechPadFrames: AUDIO_CONFIG.VAD_SETTINGS.PRE_SPEECH_PAD_FRAMES,
                 minSpeechFrames: AUDIO_CONFIG.VAD_SETTINGS.MIN_SPEECH_FRAMES,
@@ -563,15 +559,13 @@ class MiraDesktop {
      * Enhanced error handling and debugging for stop recording functionality
      */
     async stopAudioCapture() {
-        this.log('info', 'Starting audio capture stop process');
+        this.log('info', 'Stopping audio capture process');
 
         try {
             /** Set recording state to false immediately to prevent new processing */
             this.isRecording = false;
-            this.log('info', 'Recording state set to false');
 
             if (this.micVAD) {
-                this.log('info', 'Destroying VAD instance');
                 this.debugLog('audio', 'VAD destruction initiated', {
                     vadExists: !!this.micVAD,
                     isRecording: this.isRecording
@@ -580,7 +574,6 @@ class MiraDesktop {
                 try {
                     /** Call destroy method on VAD */
                     await this.micVAD.destroy();
-                    this.log('info', 'VAD.destroy() completed successfully');
                 } catch (vadError) {
                     this.log('error', 'Error calling VAD.destroy()', vadError);
                     /** Continue with cleanup even if destroy fails */
@@ -591,9 +584,6 @@ class MiraDesktop {
 
                 /** Clear the VAD reference */
                 this.micVAD = null;
-                this.log('info', 'VAD instance cleared');
-            } else {
-                this.log('info', 'No VAD instance to destroy');
             }
 
             /** Verify that recording has actually stopped */
@@ -748,7 +738,7 @@ class MiraDesktop {
                 audioProcessingStats: { ...this.audioProcessingStats }
             },
             ui: {
-                transcriptionCount: this.transcriptions.length,
+                interactionCount: this.interactions.length,
                 micButtonText: this.micStatusText?.textContent,
                 statusText: this.statusText?.textContent
             },
@@ -891,7 +881,7 @@ class MiraDesktop {
             return audioFloat32Array;
         }
 
-        /** Calculate target RMS level - optimal level for transcription */
+        /** Calculate target RMS level - optimal level for interaction */
         const targetRMS = 0.15;
         const gainFactor = Math.min(3.0, targetRMS / Math.max(analysis.rms, 0.001));
 
@@ -1077,8 +1067,6 @@ class MiraDesktop {
 
         if (listening) {
             this.micButton.classList.add('listening');
-            this.statusDot.className = 'status-dot listening';
-            this.statusText.textContent = 'Listening';
             this.micStatusText.textContent = 'Listening... Click to stop';
             this.micIcon.innerHTML = `
                 <svg class="mic-svg" viewBox="0 0 24 24" fill="currentColor">
@@ -1087,8 +1075,6 @@ class MiraDesktop {
             `;
         } else {
             this.micButton.classList.remove('listening');
-            this.statusDot.className = 'status-dot connected';
-            this.statusText.textContent = 'Connected';
             this.micStatusText.textContent = 'Click to start listening';
             this.micIcon.innerHTML = `
                 <svg class="mic-svg" viewBox="0 0 24 24" fill="currentColor">
@@ -1098,48 +1084,33 @@ class MiraDesktop {
         }
     }
 
-    startTranscriptionPolling() {
-        this.stopTranscriptionPolling();
-
-        this.transcriptionInterval = setInterval(async () => {
-            if (this.isListening && this.apiService.isConnected) {
-                /** await this.fetchLatestInteractions(); */
-            } else {
-                this.stopTranscriptionPolling();
-            }
-        }, 1000);
-    }
-
     fetchLatestInteractions(interactions) {
-
-        console.log(`interactions: ${interactions}`);
-
         for (const interaction of interactions) {
-            const existingTranscription = this.transcriptions.find(t => String(t.id) === String(interaction));
+            const existingInteraction = this.interactions.find(t => String(t.id) === String(interaction));
             try {
-                if (!existingTranscription) {
-                    this.log('info', `Adding new transcription: ${interaction}`);
+                if (!existingInteraction) {
+                    this.log('info', `Adding new interaction: ${interaction}`);
 
                     this.apiService.getInteraction(interaction).then(interactionData => {
                         if (interactionData) {
-                            this.addTranscriptionFromInteraction(interactionData);
+                            this.appendInteraction(interactionData);
                         } else {
                             this.log('error', `Failed to fetch interaction ${interaction}`);
                         }
                     }).catch(error => {
-                        this.log('error', 'Error fetching transcriptions', error);
+                        this.log('error', 'Error fetching interactions', error);
                     });
                 }
             } catch (error) {
-                this.log('error', 'Error fetching transcriptions', error);
+                this.log('error', 'Error fetching interactions', error);
             }
         }
     }
 
-    async addTranscriptionFromInteraction(interaction) {
+    async appendInteraction(interaction) {
         let timestamp = interaction.timestamp;
         try {
-            let isoString = timestamp.replace(' ', 'T');
+            let isoString = String(timestamp).replace(' ', 'T');
             if (!/[zZ]|[+-]\d{2}:\d{2}$/.test(isoString)) {
                 isoString += 'Z';
             }
@@ -1165,6 +1136,8 @@ class MiraDesktop {
             });
         }
 
+        interaction.timestamp = timestamp;
+
         if (!this.apiService) {
             this.log('error', 'Cannot fetch person: API service not initialized');
             return;
@@ -1181,47 +1154,34 @@ class MiraDesktop {
             personData = { name: 'Unknown Person', id: interaction.speaker_id };
         }
 
-        const transcription = {
-            text: interaction.text,
-            timestamp: timestamp,
-            speaker: personData,
-            id: interaction.id
-        };
+        interaction.speaker = personData;
+        this.interactions.push(interaction);
 
-        this.transcriptions.push(transcription);
-
-        const emptyState = this.transcriptionContent.querySelector('.empty-state');
+        const emptyState = this.interactionContent.querySelector('.empty-state');
         if (emptyState) {
             emptyState.remove();
         }
 
-        const transcriptionElement = this.createTranscriptionElement(transcription);
-        this.transcriptionContent.appendChild(transcriptionElement);
+        const interactionElement = this.createInteractionElement(interaction);
+        this.interactionContent.appendChild(interactionElement);
 
         /** Scroll to bottom */
-        this.transcriptionContent.scrollTop = this.transcriptionContent.scrollHeight;
+        this.interactionContent.scrollTop = this.interactionContent.scrollHeight;
     }
 
-    stopTranscriptionPolling() {
-        if (this.transcriptionInterval) {
-            clearInterval(this.transcriptionInterval);
-            this.transcriptionInterval = null;
-        }
-    }
-
-    createTranscriptionElement(transcription) {
+    createInteractionElement(interaction) {
         const element = document.createElement('div');
-        element.className = 'transcription-item';
-        const personColor = this.getPersonColor(transcription.speaker);
+        element.className = 'interaction-item';
+        const personColor = this.getPersonColor(interaction.speaker);
         element.style.borderLeftColor = personColor.border;
         element.style.backgroundColor = personColor.background;
 
         element.innerHTML = `
             <div class="person-info" style="color: ${personColor.text};">
-                <span class="person-name">${transcription.speaker.name || "Person " + transcription.speaker.index || transcription.speaker.id}</span>
-                <span class="timestamp">${transcription.timestamp}</span>
+                <span class="person-name">${interaction.speaker.name || "Person " + interaction.speaker.index || interaction.speaker.id}</span>
+                <span class="timestamp">${interaction.timestamp}</span>
             </div>
-            <div class="text">${transcription.text}</div>
+            <div class="text">${interaction.text}</div>
         `;
         return element;
     }
@@ -1249,42 +1209,52 @@ class MiraDesktop {
     }
 
     /**
-     * Clear all transcriptions from database and UI
+     * Clear all interactions from database and UI
      * Uses ApiService for proper error handling
      */
-    async clearTranscriptions() {
+    async clearInteractions() {
         if (!this.apiService) {
-            this.log('error', 'Cannot clear transcriptions: API service not initialized');
+            this.log('error', 'Cannot clear interactions: API service not initialized');
             return;
         }
 
-        try {
-            const response = await this.apiService.deleteAllInteractions();
+        console.log('Clearing interactions from database...', this.interactions);
 
-            if (response.success) {
-                this.log('info', 'Database cleared successfully', response.data);
+        let deletedCount = 0;
 
-                this.transcriptions = [];
-                this.transcription_ids.clear();
-
-                this.transcriptionContent.innerHTML = `
-                    <div class="empty-state">
-                        <i class="fas fa-robot"></i>
-                        <p>No conversations yet</p>
-                        <small>Start speaking to interact with your AI assistant</small>
-                    </div>
-                `;
-
-                this.showMessage(`Cleared ${response.data?.deleted_count || 0} interactions from database`);
-            } else {
-                this.log('error', `Failed to clear database: ${response.error}`, { status: response.status });
-                this.showMessage('Failed to clear interactions from database', 'error');
+        const deletePromises = this.interactions.map(async (interaction) => {
+            try {
+                const success = await this.apiService.deleteInteraction(interaction.id);
+                if (success) {
+                    this.log('info', 'Cleared interaction from database', { interactionId: interaction.id });
+                    deletedCount++;
+                    return interaction.id;
+                } else {
+                    this.log('error', `Failed to clear database for interaction ${interaction.id}`);
+                    return null;
+                }
+            } catch (err) {
+                this.log('warn', `Failed to delete interaction ${interaction.id}`, err);
+                return null;
             }
-        } catch (error) {
-            this.log('error', 'Error clearing interactions', error);
-            this.showMessage('Error clearing interactions: ' + error.message, 'error');
+        });
+
+        const deletedIds = await Promise.all(deletePromises);
+        this.interactions = this.interactions.filter(interaction => !deletedIds.includes(interaction.id));
+
+        if (this.interactions.length === 0) {
+            this.interactionContent.innerHTML = `
+                <div class="empty-state">
+                    <i class="fas fa-robot"></i>
+                    <p>No conversations yet</p>
+                    <small>Start speaking to interact with your AI assistant</small>
+                </div>
+            `;
         }
+
+        this.showMessage(`Cleared ${deletedCount} interactions from database`, 'info');
     }
+
 
     showConnectionBanner() {
         if (this.connectionBanner) {
@@ -1370,10 +1340,10 @@ class MiraDesktop {
                 await this.stopAudioCapture();
             }
 
-            /** Clear transcription interval */
-            if (this.transcriptionInterval) {
-                clearInterval(this.transcriptionInterval);
-                this.transcriptionInterval = null;
+            /** Clear interaction interval */
+            if (this.interactionInterval) {
+                clearInterval(this.interactionInterval);
+                this.interactionInterval = null;
             }
 
             /** Stop listening service and deregister from backend */

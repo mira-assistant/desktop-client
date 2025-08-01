@@ -35,7 +35,7 @@ Integration tests for component interactions:
 - API service and models integration
 - Configuration consistency validation
 - Error recovery and resilience
-- Complete workflow testing (transcription, stop listening)
+- Complete workflow testing (interaction, stop listening)
 
 ### 5. `renderer.test.js`
 Core utility function tests:

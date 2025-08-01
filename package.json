@@ -1,7 +1,7 @@
 {
   "name": "mira-desktop",
   "version": "4.2.0",
-  "description": "Mira Desktop - Cross-platform voice transcription application",
+  "description": "Mira Desktop - Cross-platform voice interaction application",
   "main": "main.js",
   "type": "commonjs",
   "scripts": {
@@ -16,7 +16,7 @@
     "lint": "eslint ."
   },
   "keywords": [
-    "transcription",
+    "interaction",
     "whisper",
     "desktop",
     "voice"

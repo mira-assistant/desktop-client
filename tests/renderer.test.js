@@ -9,7 +9,7 @@ describe('Renderer Core Functionality', () => {
         test('should format timestamps correctly', () => {
             const date = new Date('2023-01-01T12:30:45Z');
             const formatted = date.toLocaleTimeString();
-            
+
             expect(typeof formatted).toBe('string');
             expect(formatted.length).toBeGreaterThan(0);
         });
@@ -18,7 +18,7 @@ describe('Renderer Core Functionality', () => {
             const emptyText = '';
             const nullText = null;
             const undefinedText = undefined;
-            
+
             // These should not throw errors
             expect(() => {
                 emptyText || 'default';
@@ -30,9 +30,9 @@ describe('Renderer Core Functionality', () => {
         test('should validate UUID format', () => {
             const validUuid = '123e4567-e89b-12d3-a456-426614174000';
             const invalidUuid = 'not-a-uuid';
-            
+
             const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-            
+
             expect(uuidRegex.test(validUuid)).toBe(true);
             expect(uuidRegex.test(invalidUuid)).toBe(false);
         });
@@ -66,13 +66,13 @@ describe('Renderer Core Functionality', () => {
         test('should trim and normalize text properly', () => {
             const messyText = '  Hello World  \n\t  ';
             const normalized = messyText.trim().replace(/\s+/g, ' ');
-            
+
             expect(normalized).toBe('Hello World');
         });
 
-        test('should handle special characters in transcription', () => {
+        test('should handle special characters in interaction', () => {
             const textWithSpecialChars = 'Hello, "world"! How\'s it going? (Fine)';
-            
+
             // Should not throw errors when processing special characters
             expect(() => {
                 const cleaned = textWithSpecialChars.replace(/[^\w\s.,!?'"()-]/g, '');

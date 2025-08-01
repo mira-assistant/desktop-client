@@ -108,7 +108,7 @@ describe('Desktop Client Integration Tests', () => {
     describe('Event-Driven Architecture', () => {
         test('should emit events when connection state changes', async () => {
             let connectionEvents = [];
-            
+
             apiService.addEventListener('connectionChange', (event) => {
                 connectionEvents.push(event.detail);
             });
@@ -118,7 +118,7 @@ describe('Desktop Client Integration Tests', () => {
                 ok: true,
                 json: async () => ({
                     status: 'healthy',
-                    features: { transcription: true }
+                    features: { interaction: true }
                 })
             });
 
@@ -133,7 +133,7 @@ describe('Desktop Client Integration Tests', () => {
 
         test('should emit events when new interactions are detected', async () => {
             let interactionEvents = [];
-            
+
             apiService.addEventListener('interactionsUpdated', (event) => {
                 interactionEvents.push(event.detail);
             });
@@ -215,14 +215,14 @@ describe('Desktop Client Integration Tests', () => {
 
         test('should validate audio configuration values', () => {
             const audioConfig = AUDIO_CONFIG.VAD_THRESHOLDS;
-            
+
             // Positive speech threshold should be higher than negative
             expect(audioConfig.POSITIVE_SPEECH).toBeGreaterThan(audioConfig.NEGATIVE_SPEECH);
-            
+
             // Silence duration should be reasonable (100ms to 2000ms)
             expect(audioConfig.SILENCE_MS).toBeGreaterThan(100);
             expect(audioConfig.SILENCE_MS).toBeLessThan(2000);
-            
+
             // Optimization thresholds should be in valid dB ranges
             expect(AUDIO_CONFIG.OPTIMIZATION.NOISE_FLOOR).toBeLessThan(0);
             expect(AUDIO_CONFIG.OPTIMIZATION.SIGNAL_THRESHOLD).toBeLessThan(0);
@@ -232,7 +232,7 @@ describe('Desktop Client Integration Tests', () => {
     });
 
     describe('Data Flow Integration', () => {
-        test('should handle complete transcription workflow', async () => {
+        test('should handle complete interaction workflow', async () => {
             apiService.baseUrl = 'http://localhost:8000';
             apiService.isConnected = true;
             apiService.isRegistered = true;
@@ -294,7 +294,7 @@ describe('Desktop Client Integration Tests', () => {
     describe('Memory and Performance', () => {
         test('should manage recent interaction IDs efficiently', () => {
             const maxIds = 1000;
-            
+
             // Add many interaction IDs
             for (let i = 0; i < maxIds + 100; i++) {
                 apiService.recentInteractionIds.add(`id-${i}`);
@@ -306,7 +306,7 @@ describe('Desktop Client Integration Tests', () => {
 
         test('should handle rapid connection state changes', () => {
             let eventCount = 0;
-            
+
             apiService.addEventListener('connectionChange', () => {
                 eventCount++;
             });

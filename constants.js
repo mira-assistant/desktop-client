@@ -47,7 +47,7 @@ export const AUDIO_CONFIG = {
         NOISE_FLOOR: -40,
         /** Signal threshold in dB */
         SIGNAL_THRESHOLD: -20,
-        /** Optimal RMS for transcription */
+        /** Optimal RMS for interaction */
         TARGET_RMS: 0.15,
         /** Minimum SNR threshold in dB */
         MIN_SNR_DB: -20,
@@ -172,7 +172,7 @@ export const ERROR_MESSAGES = {
     BACKEND: {
         REGISTRATION_FAILED: 'Failed to register with backend',
         SERVICE_UNAVAILABLE: 'Backend service unavailable',
-        TRANSCRIPTION_FAILED: 'Transcription service failed',
+        INTERACTION_FAILED: 'Interaction service failed',
     }
 };
 
