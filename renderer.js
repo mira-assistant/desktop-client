@@ -58,7 +58,7 @@ class MiraDesktop {
         this.initializeElements();
         this.setupEventListeners();
         this.setupApiEventListeners();
-        
+
         /** Initialize connection banner state - start as disconnected */
         this.showConnectionBanner();
     }
@@ -316,7 +316,7 @@ class MiraDesktop {
         if (this.isDeregistering) {
             return;
         }
-        
+
         this.isDeregistering = true;
         try {
             const success = await this.apiService.deregisterClient();

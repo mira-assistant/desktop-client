@@ -124,7 +124,7 @@ export class ApiService extends EventTarget {
     updateRecentInteractions(interactions) {
         const newIds = new Set(interactions);
         const hasChanges = newIds.size !== this.recentInteractionIds.size ||
-                          [...newIds].some(id => !this.recentInteractionIds.has(id));
+            [...newIds].some(id => !this.recentInteractionIds.has(id));
 
         if (hasChanges) {
             this.recentInteractionIds = newIds;
@@ -139,9 +139,10 @@ export class ApiService extends EventTarget {
      * @param {string} endpoint - API endpoint path
      * @param {Object} options - Fetch options
      * @param {number} timeout - Request timeout in milliseconds
+     * @param {boolean} disableContentType - Whether to disable Content-Type header
      * @returns {Promise<ApiResponse>}
      */
-    async makeRequest(endpoint, options = {}, timeout = API_CONFIG.TIMEOUTS.DEFAULT_REQUEST) {
+    async makeRequest(endpoint, options = {}, timeout = API_CONFIG.TIMEOUTS.DEFAULT_REQUEST, disableContentType = false) {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => {
             controller.abort();
@@ -163,7 +164,7 @@ export class ApiService extends EventTarget {
                 ...options,
                 signal: controller.signal,
                 headers: {
-                    'Content-Type': 'application/json',
+                    ...(!disableContentType && { 'Content-Type': 'application/json' }),
                     ...options.headers
                 }
             });
@@ -339,11 +340,15 @@ export class ApiService extends EventTarget {
         formData.append('audio', audioBlob, `audio.${format}`);
         formData.append('client_id', this.clientId);
 
-        const response = await this.makeRequest(API_ENDPOINTS.INTERACTIONS_REGISTER, {
-            method: 'POST',
-            body: formData,
-            headers: {} // Remove Content-Type to let browser set it for FormData
-        });
+        const response = await this.makeRequest(
+            API_ENDPOINTS.INTERACTIONS_REGISTER,
+            {
+                method: 'POST',
+                body: formData,
+            },
+            API_CONFIG.TIMEOUTS.INTERACTION_REQUEST,
+            true
+        );
 
         return response.success && response.data ? Interaction.fromApiResponse(response.data) : null;
     }

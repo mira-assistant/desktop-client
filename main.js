@@ -89,6 +89,21 @@ app.whenReady().then(() => {
         { role: 'togglefullscreen' }
       ]
     }
+    ,
+    {
+      label: 'Edit',
+      submenu: [
+        { role: 'undo' },
+        { role: 'redo' },
+        { type: 'separator' },
+        { role: 'cut' },
+        { role: 'copy' },
+        { role: 'paste' },
+        { role: 'delete' },
+        { type: 'separator' },
+        { role: 'selectAll' }
+      ]
+    }
   ];
 
   const menu = Menu.buildFromTemplate(template);
