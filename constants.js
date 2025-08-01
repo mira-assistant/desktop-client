@@ -124,6 +124,7 @@ export const UI_CONFIG = {
  * @type {Object}
  */
 export const DEBUG_CONFIG = {
+    DEBUG_MODE: false,
     LOG_LEVELS: {
         ERROR: 0,
         WARN: 1,

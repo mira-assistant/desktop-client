@@ -18,6 +18,7 @@ class MiraDesktop {
         this.isToggling = false;
         this.isProcessingAudio = false;
         this.isDeregistering = false;
+        this.isTogglingAudioCapture = false;
 
         /** Interaction data */
         this.interactions = [];
@@ -36,22 +37,6 @@ class MiraDesktop {
             failedRequests: 0,
             averageAudioDuration: 0
         };
-
-        /** Enhanced audio optimization properties from constants */
-        this.audioOptimization = {
-            enableAdvancedNoiseReduction: AUDIO_CONFIG.OPTIMIZATION.ENABLE_ADVANCED_NOISE_REDUCTION,
-            enableDynamicGainControl: AUDIO_CONFIG.OPTIMIZATION.ENABLE_DYNAMIC_GAIN_CONTROL,
-            enableSpectralGating: AUDIO_CONFIG.OPTIMIZATION.ENABLE_SPECTRAL_GATING,
-            noiseFloor: AUDIO_CONFIG.OPTIMIZATION.NOISE_FLOOR,
-            signalThreshold: AUDIO_CONFIG.OPTIMIZATION.SIGNAL_THRESHOLD,
-            adaptiveThresholds: AUDIO_CONFIG.OPTIMIZATION.ENABLE_ADAPTIVE_THRESHOLDS,
-            environmentalNoise: AUDIO_CONFIG.OPTIMIZATION.ENVIRONMENTAL_NOISE,
-            lastNoiseAnalysis: AUDIO_CONFIG.OPTIMIZATION.LAST_NOISE_ANALYSIS
-        };
-
-        /** Debug mode configuration */
-        this.debugMode = false;
-        this.debugLevel = DEBUG_CONFIG.LOG_LEVELS.INFO;
 
         /** Set up API service event listeners */
         this.initializeElements();
@@ -228,7 +213,7 @@ class MiraDesktop {
      */
     log(level, message, data = null) {
         const levels = DEBUG_CONFIG.LOG_LEVELS;
-        const currentLevel = this.debugMode ? DEBUG_CONFIG.LOG_LEVELS.DEBUG : this.debugLevel;
+        const currentLevel = DEBUG_CONFIG.DEBUG_MODE ? DEBUG_CONFIG.LOG_LEVELS.DEBUG : DEBUG_CONFIG.LOG_LEVELS.INFO;
 
         if (levels[level.toUpperCase()] > currentLevel) {
             return;
@@ -248,7 +233,7 @@ class MiraDesktop {
                 console.log(prefix, message, data || '');
                 break;
             case 'debug':
-                if (this.debugMode) {
+                if (DEBUG_CONFIG.DEBUG_MODE) {
                     console.log(prefix, message, data || '');
                 }
                 break;
@@ -264,7 +249,7 @@ class MiraDesktop {
      * @param {Object} data - Important data to include
      */
     debugLog(category, message, data = {}) {
-        if (this.debugMode) {
+        if (DEBUG_CONFIG.DEBUG_MODE) {
             this.log('debug', `[${category.toUpperCase()}] ${message}`, {
                 timestamp: Date.now(),
                 debugData: data,
@@ -335,6 +320,14 @@ class MiraDesktop {
             return;
         }
 
+        // Wait until audio capture is not toggling (ready)
+        async function waitTilAudioCaptureReady(ctx) {
+            while (ctx.isTogglingAudioCapture) {
+                console.log('Waiting for audio capture to be ready...');
+                await new Promise(resolve => setTimeout(resolve, 50));
+            }
+        }
+
         if (this.isToggling) {
             return;
         }
@@ -343,25 +336,28 @@ class MiraDesktop {
 
         try {
             /** Provide immediate UI feedback */
+            this.micButton.disabled = true;
             this.micButton.style.opacity = UI_CONFIG.OPACITY.DISABLED;
             this.micStatusText.textContent = this.isListening ? 'Stopping...' : 'Starting...';
-
-            /** Small delay to ensure UI feedback is visible */
-            await new Promise(resolve => setTimeout(resolve, 50));
+            this.isTogglingAudioCapture = true;
 
             if (this.isListening) {
                 /** Send disable request to backend - state management will handle cleanup */
                 const success = await this.apiService.disableService();
+
                 if (!success) {
                     throw new Error('Failed to send disable request to backend');
                 }
             } else {
                 /** Send enable request to backend - state management will handle audio start */
                 const success = await this.apiService.enableService();
+
                 if (!success) {
                     throw new Error('Failed to send enable request to backend');
                 }
             }
+
+            await waitTilAudioCaptureReady(this);
 
         } catch (error) {
             this.log('error', 'Error toggling listening', error);
@@ -394,7 +390,7 @@ class MiraDesktop {
             });
 
         } finally {
-            /** Always reset toggle state and UI */
+            this.micButton.disabled = false;
             this.updateListeningUI(this.isListening);
             this.isToggling = false;
         }
@@ -424,6 +420,9 @@ class MiraDesktop {
 
     async startAudioCapture() {
         try {
+            this.log('info', 'Starting audio capture process');
+
+            this.isTogglingAudioCapture = true;
             await this.waitForVADLibrary();
 
             if (typeof vad === 'undefined') {
@@ -500,12 +499,21 @@ class MiraDesktop {
 
                 onFrameProcessed: (probabilities) => {
                     /** Enhanced debug mode logging for frame processing */
-                    if (this.debugMode) {
+                    if (DEBUG_CONFIG.DEBUG_MODE) {
                         this.debugLog('vad', 'Frame processed', {
                             probabilities: probabilities,
                             isRecording: this.isRecording,
                             vadStatus: this.micStatusText?.textContent,
-                            audioOptimization: this.audioOptimization
+                            audioOptimization: {
+                                enableAdvancedNoiseReduction: AUDIO_CONFIG.OPTIMIZATION.ENABLE_ADVANCED_NOISE_REDUCTION,
+                                enableDynamicGainControl: AUDIO_CONFIG.OPTIMIZATION.ENABLE_DYNAMIC_GAIN_CONTROL,
+                                enableSpectralGating: AUDIO_CONFIG.OPTIMIZATION.ENABLE_SPECTRAL_GATING,
+                                noiseFloor: AUDIO_CONFIG.OPTIMIZATION.NOISE_FLOOR,
+                                signalThreshold: AUDIO_CONFIG.OPTIMIZATION.SIGNAL_THRESHOLD,
+                                adaptiveThresholds: AUDIO_CONFIG.OPTIMIZATION.ENABLE_ADAPTIVE_THRESHOLDS,
+                                environmentalNoise: AUDIO_CONFIG.OPTIMIZATION.ENVIRONMENTAL_NOISE,
+                                lastNoiseAnalysis: AUDIO_CONFIG.OPTIMIZATION.LAST_NOISE_ANALYSIS
+                            }
                         });
                     }
                 },
@@ -551,6 +559,8 @@ class MiraDesktop {
 
             this.showMessage(errorMessage, 'error');
             throw error;
+        } finally {
+            this.isTogglingAudioCapture = false;
         }
     }
 
@@ -559,11 +569,12 @@ class MiraDesktop {
      * Enhanced error handling and debugging for stop recording functionality
      */
     async stopAudioCapture() {
-        this.log('info', 'Stopping audio capture process');
 
         try {
+            this.log('info', 'Stopping audio capture process');
             /** Set recording state to false immediately to prevent new processing */
             this.isRecording = false;
+            this.isTogglingAudioCapture = true;
 
             if (this.micVAD) {
                 this.debugLog('audio', 'VAD destruction initiated', {
@@ -617,6 +628,8 @@ class MiraDesktop {
             });
 
             /** Don't rethrow the error - we want to ensure cleanup happens */
+        } finally {
+            this.isTogglingAudioCapture = false;
         }
     }
 
@@ -686,29 +699,13 @@ class MiraDesktop {
      * Verify that recording has actually stopped
      */
     async verifyRecordingIsStopped() {
-        /** Check internal state */
+        // TODO: Need to implement
+
         if (this.isRecording) {
             console.log('Recording state verification - isRecording:', this.isRecording, 'micVAD:', !!this.micVAD);
         }
     }
 
-    /**
-     * Check if the audio contains a cancel command like "Mira cancel"
-     * This is a placeholder for potential future speech recognition integration
-     */
-    checkForCancelCommand(audioData) { /* eslint-disable-line no-unused-vars */
-        /** Note: This is a placeholder for cancel command detection */
-        /** In a full implementation, this could use a lightweight speech recognition */
-        /** to detect "Mira cancel" or similar commands locally before sending to backend */
-
-        /** Future implementation could: */
-        /** 1. Use a lightweight local speech recognition model */
-        /** 2. Check for specific wake words like "Mira cancel", "stop", etc. */
-        /** 3. If detected, immediately call this.apiService.disableService() */
-        /** 4. Return true/false to indicate if command was found */
-
-        return false;
-    }
 
     /**
      * Get comprehensive debug information
@@ -717,8 +714,8 @@ class MiraDesktop {
     getDebugInfo() {
         const debugInfo = {
             system: {
-                debugMode: this.debugMode,
-                debugLevel: this.debugLevel,
+                debugMode: DEBUG_CONFIG.DEBUG_MODE,
+                debugLevel: DEBUG_CONFIG.LOG_LEVELS.DEBUG,
                 userAgent: navigator.userAgent,
                 timestamp: new Date().toISOString()
             },
@@ -734,7 +731,16 @@ class MiraDesktop {
                 isRecording: this.isRecording,
                 isProcessingAudio: this.isProcessingAudio,
                 vadInitialized: !!this.micVAD,
-                audioOptimization: { ...this.audioOptimization },
+                audioOptimization: {
+                    enableAdvancedNoiseReduction: AUDIO_CONFIG.OPTIMIZATION.ENABLE_ADVANCED_NOISE_REDUCTION,
+                    enableDynamicGainControl: AUDIO_CONFIG.OPTIMIZATION.ENABLE_DYNAMIC_GAIN_CONTROL,
+                    enableSpectralGating: AUDIO_CONFIG.OPTIMIZATION.ENABLE_SPECTRAL_GATING,
+                    noiseFloor: AUDIO_CONFIG.OPTIMIZATION.NOISE_FLOOR,
+                    signalThreshold: AUDIO_CONFIG.OPTIMIZATION.SIGNAL_THRESHOLD,
+                    adaptiveThresholds: AUDIO_CONFIG.OPTIMIZATION.ADAPTIVE_THRESHOLDS,
+                    environmentalNoise: AUDIO_CONFIG.OPTIMIZATION.ENVIRONMENTAL_NOISE,
+                    lastNoiseAnalysis: AUDIO_CONFIG.OPTIMIZATION.LAST_NOISE_ANALYSIS
+                },
                 audioProcessingStats: { ...this.audioProcessingStats }
             },
             ui: {
@@ -751,7 +757,7 @@ class MiraDesktop {
             }
         };
 
-        if (this.debugMode) {
+        if (DEBUG_CONFIG.DEBUG_MODE) {
             this.log('debug', 'Debug info requested', debugInfo);
         }
 
@@ -768,17 +774,17 @@ class MiraDesktop {
 
             /** Step 2: Apply noise reduction if enabled */
             let processedAudio = audioFloat32Array;
-            if (this.audioOptimization.enableAdvancedNoiseReduction) {
+            if (AUDIO_CONFIG.OPTIMIZATION.ENABLE_ADVANCED_NOISE_REDUCTION) {
                 processedAudio = this.applyNoiseReduction(processedAudio, audioAnalysis);
             }
 
             /** Step 3: Apply dynamic gain control */
-            if (this.audioOptimization.enableDynamicGainControl) {
+            if (AUDIO_CONFIG.OPTIMIZATION.ENABLE_DYNAMIC_GAIN_CONTROL) {
                 processedAudio = this.applyDynamicGainControl(processedAudio, audioAnalysis);
             }
 
             /** Step 4: Apply spectral gating for further noise reduction */
-            if (this.audioOptimization.enableSpectralGating) {
+            if (AUDIO_CONFIG.OPTIMIZATION.ENABLE_SPECTRAL_GATING) {
                 processedAudio = this.applySpectralGating(processedAudio, audioAnalysis);
             }
 
@@ -786,7 +792,7 @@ class MiraDesktop {
             const finalAnalysis = this.analyzeAudioQuality(processedAudio);
 
             /** Step 6: Only send if audio quality is sufficient */
-            if (finalAnalysis.snr > this.audioOptimization.signalThreshold) {
+            if (finalAnalysis.snr > AUDIO_CONFIG.OPTIMIZATION.SIGNAL_THRESHOLD) {
                 await this.sendVADAudioToBackend(processedAudio);
             } else {
                 this.updateVADStatus('waiting');
