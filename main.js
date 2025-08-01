@@ -6,7 +6,7 @@ let mainWindow;
 function createWindow() {
   // Create the browser window
   mainWindow = new BrowserWindow({
-    width: 1200,
+    width: 1400,
     height: 800,
     minWidth: 800,
     minHeight: 600,
@@ -18,9 +18,9 @@ function createWindow() {
       devTools: true,
       clipboard: true
     },
-    icon: path.join(__dirname, 'assets', 'icon.png'), // We'll create this later
+    icon: path.join(__dirname, 'assets', 'icon.png'),
     titleBarStyle: 'default',
-    show: false // Don't show until ready
+    show: false
   });
 
   // Load the app
