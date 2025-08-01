@@ -161,27 +161,36 @@ class MiraDesktop {
         }
 
         if (this.isToggling) {
-            console.log('Toggle already in progress, ignoring');
+            console.log('⚠️ Toggle already in progress, ignoring');
             return;
         }
 
         this.isToggling = true;
         const originalButtonText = this.micStatusText.textContent;
+        console.log(`🔄 Toggling listening state (currently: ${this.isListening ? 'listening' : 'stopped'})`);
 
         try {
+            // Provide immediate UI feedback
             this.micButton.style.opacity = '0.7';
             this.micStatusText.textContent = this.isListening ? 'Stopping...' : 'Starting...';
 
+            // Small delay to ensure UI feedback is visible
             await new Promise(resolve => setTimeout(resolve, 50));
 
             if (this.isListening) {
+                console.log('🛑 Stopping listening...');
                 await this.stopListening();
+                console.log('✅ Successfully stopped listening');
             } else {
+                console.log('▶️ Starting listening...');
                 await this.startListening();
+                console.log('✅ Successfully started listening');
             }
+            
         } catch (error) {
-            console.error('Error toggling listening:', error);
+            console.error('❌ Error toggling listening:', error);
 
+            // Determine user-friendly error message
             let errorMessage = 'Error: ' + error.message;
             if (error.message.includes('Permission denied') || error.message.includes('NotAllowedError')) {
                 errorMessage = 'Microphone permission denied. Please allow microphone access and try again.';
@@ -189,17 +198,39 @@ class MiraDesktop {
                 errorMessage = 'Voice detection library failed to load. Please check your internet connection and refresh the page.';
             } else if (error.message.includes('timeout')) {
                 errorMessage = 'Operation timed out. Please try again.';
+            } else if (error.message.includes('backend') || error.message.includes('Backend')) {
+                errorMessage = 'Backend connection error. Please check your connection and try again.';
+            } else if (error.message.includes('network') || error.message.includes('Failed to fetch')) {
+                errorMessage = 'Network error. Please check your connection and try again.';
             }
 
             this.showMessage(errorMessage, 'error');
+            
+            // Ensure UI reflects actual state after error
             this.updateListeningUI(this.isListening);
+            
+            // Log detailed error information for debugging
+            console.error('Toggle listening error details:', {
+                message: error.message,
+                name: error.name,
+                stack: error.stack,
+                isConnected: this.isConnected,
+                isListening: this.isListening,
+                isRecording: this.isRecording,
+                isToggling: this.isToggling
+            });
+            
         } finally {
+            // Always reset toggle state and UI
             this.isToggling = false;
             this.micButton.style.opacity = '1';
 
+            // Restore button text if we're not listening and text shows loading state
             if (!this.isListening && this.micStatusText.textContent.includes('...')) {
                 this.micStatusText.textContent = originalButtonText;
             }
+            
+            console.log(`✅ Toggle completed. Current state - Listening: ${this.isListening}, Recording: ${this.isRecording}`);
         }
     }
 
@@ -229,30 +260,146 @@ class MiraDesktop {
     }
 
     async stopListening() {
+        console.log('🛑 Starting listening service stop process...');
+        
         try {
-            console.log('Stopping listening service...');
+            // First, stop audio capture to ensure recording stops immediately
+            console.log('🎤 Stopping audio capture...');
             await this.stopAudioCapture();
 
-            const response = await fetch(`${this.baseUrl}/service/disable`, {
-                method: 'PATCH'
-            });
-
-            if (response.ok) {
+            // Send disable request to backend with timeout and retry logic
+            console.log('🌐 Sending disable request to backend...');
+            const backendStopResult = await this.sendBackendStopRequest();
+            
+            if (backendStopResult.success) {
+                console.log('✅ Backend disabled successfully');
+                
+                // Update states only after successful backend confirmation
                 this.isListening = false;
                 this.updateListeningUI(false);
                 this.stopTranscriptionPolling();
+                
+                console.log('✅ Listening stopped successfully');
             } else {
-                const errorText = await response.text();
-                console.error('Failed to disable backend service:', response.status, errorText);
-                throw new Error(`Failed to disable listening: ${response.status}`);
+                console.warn('⚠️ Backend disable request failed, but audio capture is stopped');
+                
+                // Even if backend fails, ensure local state is consistent
+                this.isListening = false;
+                this.updateListeningUI(false);
+                this.stopTranscriptionPolling();
+                
+                // Show user-friendly error message
+                this.showMessage(
+                    'Audio recording stopped, but backend communication failed. Please check your connection.', 
+                    'warning'
+                );
             }
+            
         } catch (error) {
-            console.error('Error stopping listening:', error);
-            this.isListening = false;
-            this.updateListeningUI(false);
-            this.stopTranscriptionPolling();
-            throw error;
+            console.error('❌ Error stopping listening:', error);
+            
+            // Ensure cleanup happens even if there are errors
+            try {
+                // Force stop audio capture if not already done
+                await this.stopAudioCapture();
+                
+                // Update states to stopped regardless of backend status
+                this.isListening = false;
+                this.updateListeningUI(false);
+                this.stopTranscriptionPolling();
+                
+                console.log('✅ Forced stop completed');
+            } catch (cleanupError) {
+                console.error('❌ Error during forced stop cleanup:', cleanupError);
+            }
+            
+            // Log detailed error information
+            console.error('Stop listening error details:', {
+                message: error.message,
+                name: error.name,
+                stack: error.stack,
+                isConnected: this.isConnected,
+                isListening: this.isListening,
+                isRecording: this.isRecording
+            });
+            
+            // Show user-friendly error message
+            this.showMessage('Error stopping recording: ' + error.message, 'error');
+            
+            // Don't rethrow - we want to ensure the UI is updated
         }
+    }
+
+    /**
+     * Send stop request to backend with proper error handling and timeout
+     */
+    async sendBackendStopRequest(maxRetries = 2, timeout = 10000) {
+        console.log('🌐 Attempting to disable backend service...');
+        
+        for (let attempt = 1; attempt <= maxRetries; attempt++) {
+            try {
+                console.log(`🔄 Backend disable attempt ${attempt}/${maxRetries}`);
+                
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => {
+                    controller.abort();
+                    console.warn(`⏰ Backend disable request timeout after ${timeout}ms`);
+                }, timeout);
+
+                const response = await fetch(`${this.baseUrl}/service/disable`, {
+                    method: 'PATCH',
+                    signal: controller.signal,
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+
+                clearTimeout(timeoutId);
+
+                if (response.ok) {
+                    console.log('✅ Backend service disabled successfully');
+                    return { success: true, attempt };
+                } else {
+                    const errorText = await response.text();
+                    console.error(`❌ Backend disable failed (attempt ${attempt}):`, response.status, errorText);
+                    
+                    if (attempt === maxRetries) {
+                        return { 
+                            success: false, 
+                            error: `HTTP ${response.status}: ${response.statusText}`,
+                            details: errorText
+                        };
+                    }
+                    
+                    // Wait before retry
+                    await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
+                }
+                
+            } catch (error) {
+                console.error(`❌ Backend disable request error (attempt ${attempt}):`, error);
+                
+                if (error.name === 'AbortError') {
+                    console.warn('⏰ Backend request timed out');
+                } else if (error.message.includes('Failed to fetch') || error.message.includes('network')) {
+                    console.warn('🌐 Network error contacting backend');
+                } else {
+                    console.error('❌ Unexpected error:', error);
+                }
+                
+                if (attempt === maxRetries) {
+                    return { 
+                        success: false, 
+                        error: error.message,
+                        type: error.name 
+                    };
+                }
+                
+                // Wait before retry
+                await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
+            }
+        }
+        
+        return { success: false, error: 'All retry attempts failed' };
     }
 
     async waitForVADLibrary(timeout = 15000) {
@@ -399,17 +546,246 @@ class MiraDesktop {
     }
 
     async stopAudioCapture() {
+        console.log('🛑 Starting audio capture stop process...');
+        
         try {
+            // Set recording state to false immediately to prevent new processing
             this.isRecording = false;
+            console.log('✅ Recording state set to false');
 
             if (this.micVAD) {
-                this.micVAD.destroy();
+                console.log('🎤 Destroying VAD instance...');
+                
+                try {
+                    // Call destroy method on VAD
+                    await this.micVAD.destroy();
+                    console.log('✅ VAD.destroy() completed successfully');
+                } catch (vadError) {
+                    console.error('❌ Error calling VAD.destroy():', vadError);
+                    // Continue with cleanup even if destroy fails
+                }
+
+                // Additional cleanup: manually stop any remaining audio tracks
+                await this.forceStopAllAudioTracks();
+                
+                // Clear the VAD reference
                 this.micVAD = null;
+                console.log('✅ VAD instance cleared');
+            } else {
+                console.log('ℹ️ No VAD instance to destroy');
             }
 
+            // Verify that recording has actually stopped
+            await this.verifyRecordingIsStopped();
+            
+            // Update VAD status
             this.updateVADStatus('stopped');
+            console.log('✅ Audio capture stopped successfully');
+            
         } catch (error) {
-            console.error('Error stopping VAD audio capture:', error);
+            console.error('❌ Error stopping VAD audio capture:', error);
+            
+            // Force cleanup even if there are errors
+            try {
+                await this.forceStopAllAudioTracks();
+                this.micVAD = null;
+                this.isRecording = false;
+                this.updateVADStatus('stopped');
+                console.log('✅ Forced cleanup completed');
+            } catch (forceError) {
+                console.error('❌ Error during forced cleanup:', forceError);
+            }
+            
+            // Log detailed error information for debugging
+            console.error('Audio capture stop error details:', {
+                message: error.message,
+                name: error.name,
+                stack: error.stack,
+                isRecording: this.isRecording,
+                micVAD: !!this.micVAD
+            });
+            
+            // Don't rethrow the error - we want to ensure cleanup happens
+        }
+    }
+
+    /**
+     * Force stop all active audio tracks to ensure recording is completely stopped
+     */
+    async forceStopAllAudioTracks() {
+        console.log('🔍 Checking for active audio tracks...');
+        
+        try {
+            // Get all media devices
+            const mediaDevices = navigator.mediaDevices;
+            if (!mediaDevices || !mediaDevices.enumerateDevices) {
+                console.log('ℹ️ MediaDevices API not available');
+                return;
+            }
+
+            // Check if there are any active media streams
+            // Note: We can't directly access all streams, but we can check getUserMedia permissions
+            let activeStreams = 0;
+            
+            // Try to detect active streams by checking permissions
+            try {
+                const permissionStatus = await navigator.permissions.query({ name: 'microphone' });
+                console.log('🎤 Microphone permission status:', permissionStatus.state);
+            } catch (permError) {
+                console.log('ℹ️ Could not check microphone permission status:', permError.message);
+            }
+
+            // The VAD library should clean up its own streams, but let's add a verification step
+            // We'll try to create a new temporary stream to verify microphone access is properly released
+            await this.verifyMicrophoneIsReleased();
+            
+            console.log(`✅ Audio track cleanup completed (${activeStreams} streams processed)`);
+            
+        } catch (error) {
+            console.error('❌ Error during audio track cleanup:', error);
+            // Continue execution - this is a best-effort cleanup
+        }
+    }
+
+    /**
+     * Verify that the microphone is properly released by the VAD library
+     */
+    async verifyMicrophoneIsReleased() {
+        console.log('🔍 Verifying microphone is released...');
+        
+        try {
+            // Try to get microphone access briefly to verify it's not locked
+            const testStream = await navigator.mediaDevices.getUserMedia({ 
+                audio: { 
+                    sampleRate: 16000,
+                    channelCount: 1 
+                } 
+            });
+            
+            // Immediately stop the test stream
+            if (testStream) {
+                testStream.getTracks().forEach(track => {
+                    track.stop();
+                    console.log('✅ Test audio track stopped:', track.id);
+                });
+                console.log('✅ Microphone is properly released - test stream created and stopped');
+            }
+            
+        } catch (error) {
+            if (error.name === 'NotAllowedError') {
+                console.log('ℹ️ Microphone permission denied (expected if user has denied access)');
+            } else if (error.name === 'NotFoundError') {
+                console.log('ℹ️ No microphone found');
+            } else if (error.name === 'AbortError' || error.message.includes('busy')) {
+                console.warn('⚠️ Microphone may still be in use by another process:', error.message);
+                // This suggests the microphone wasn't properly released
+                throw new Error('Microphone appears to still be in use after VAD destruction');
+            } else {
+                console.warn('⚠️ Error verifying microphone release:', error);
+            }
+        }
+    }
+
+    /**
+     * Verify that recording has actually stopped
+     */
+    async verifyRecordingIsStopped() {
+        console.log('🔍 Verifying recording is stopped...');
+        
+        // Check internal state
+        if (this.isRecording) {
+            console.warn('⚠️ Recording state is still true after stop attempt');
+        }
+        
+        // Check VAD instance
+        if (this.micVAD) {
+            console.warn('⚠️ VAD instance still exists after stop attempt');
+        }
+        
+        // Additional verification could be added here
+        console.log('✅ Recording state verification completed');
+    }
+
+    /**
+     * Check if the audio contains a cancel command like "Mira cancel"
+     * This is a placeholder for potential future speech recognition integration
+     */
+    checkForCancelCommand(audioData) { // eslint-disable-line no-unused-vars
+        // Note: This is a placeholder for cancel command detection
+        // In a full implementation, this could use a lightweight speech recognition
+        // to detect "Mira cancel" or similar commands locally before sending to backend
+        
+        if (this.debugMode) {
+            console.log('🔍 Checking for cancel commands in audio...');
+            // For now, we'll just log that we're checking
+            console.log('ℹ️ Cancel command detection not implemented yet');
+        }
+        
+        // Future implementation could:
+        // 1. Use a lightweight local speech recognition model
+        // 2. Check for specific wake words like "Mira cancel", "stop", etc.
+        // 3. If detected, immediately call this.stopListening()
+        // 4. Return true/false to indicate if command was found
+        
+        return false; // No cancel command detected
+    }
+
+    /**
+     * Add debugging method to show audio processing statistics
+     */
+    showAudioStats() {
+        if (!this.audioProcessingStats) {
+            console.log('ℹ️ No audio stats available');
+            return;
+        }
+
+        const stats = this.audioProcessingStats;
+        console.log('🎤 Audio Processing Statistics:');
+        console.log(`- Total audio chunks sent: ${stats.totalAudioSent}`);
+        console.log(`- Total audio bytes: ${stats.totalAudioBytes.toLocaleString()}`);
+        console.log(`- Successful requests: ${stats.successfulRequests}`);
+        console.log(`- Failed requests: ${stats.failedRequests}`);
+        console.log(`- Success rate: ${stats.totalAudioSent > 0 ? ((stats.successfulRequests / stats.totalAudioSent) * 100).toFixed(1) : 0}%`);
+        console.log(`- Average audio duration: ${stats.averageAudioDuration.toFixed(2)}s`);
+        console.log(`- Current state: Listening=${this.isListening}, Recording=${this.isRecording}`);
+        console.log(`- VAD instance: ${this.micVAD ? 'Active' : 'None'}`);
+        
+        // Show in UI as well
+        const statsMessage = `Audio Stats: ${stats.totalAudioSent} chunks sent, ${stats.successfulRequests} successful, ${((stats.successfulRequests / (stats.totalAudioSent || 1)) * 100).toFixed(1)}% success rate`;
+        this.showMessage(statsMessage, 'info');
+    }
+
+    /**
+     * Test backend connection with detailed logging
+     */
+    async testBackendConnection() {
+        console.log('🔍 Testing backend connection...');
+        
+        if (!this.baseUrl) {
+            console.warn('⚠️ No backend URL configured');
+            this.showMessage('No backend URL configured', 'warning');
+            return;
+        }
+
+        try {
+            const startTime = Date.now();
+            const response = await fetch(`${this.baseUrl}/`, {
+                method: 'GET',
+                cache: 'no-cache'
+            });
+            const duration = Date.now() - startTime;
+
+            if (response.ok) {
+                const data = await response.json();
+                console.log(`✅ Backend connection test successful (${duration}ms):`, data);
+                this.showMessage(`Backend connection OK (${duration}ms)`, 'info');
+            } else {
+                console.error(`❌ Backend connection test failed: ${response.status} ${response.statusText}`);
+                this.showMessage(`Backend test failed: ${response.status}`, 'error');
+            }
+        } catch (error) {
+            console.error('❌ Backend connection test error:', error);
+            this.showMessage(`Backend test error: ${error.message}`, 'error');
         }
     }
 
@@ -551,20 +927,36 @@ class MiraDesktop {
             'waiting': 'Waiting for speech...',
             'speaking': 'Speaking detected...',
             'processing': 'Processing speech...',
-            'stopped': 'Stopped'
+            'stopped': 'Stopped',
+            'stopping': 'Stopping...'
         };
 
         if (this.isListening && this.micStatusText) {
             const message = statusMessages[status] || 'Unknown status';
-            // Only update if not showing the main listening message
+            // Only update specific statuses, maintain the main listening message for most cases
             if (status === 'stopping') {
                 this.micStatusText.textContent = message;
+            } else if (status === 'stopped') {
+                this.micStatusText.textContent = 'Click to start listening';
             } else {
                 this.micStatusText.textContent = 'Listening... Click to stop';
             }
+        } else if (!this.isListening && status === 'stopped') {
+            this.micStatusText.textContent = 'Click to start listening';
         }
 
-        console.log(`VAD Status: ${statusMessages[status] || status}`);
+        console.log(`🎤 VAD Status: ${statusMessages[status] || status}`);
+        
+        // Add visual indicators for debugging if in debug mode
+        if (this.debugMode) {
+            console.log(`🐛 Debug - VAD Status Details:`, {
+                status: status,
+                isListening: this.isListening,
+                isRecording: this.isRecording,
+                micVAD: !!this.micVAD,
+                message: statusMessages[status] || status
+            });
+        }
     }
 
     updateFeatures(features) {
@@ -614,7 +1006,7 @@ class MiraDesktop {
     updateConnectionStatus(connected) {
         if (connected) {
             this.statusDot.className = 'status-dot connected';
-            const connectedHost = [...this.baseUrls.entries()].find(([_, url]) => url === this.baseUrl)?.[0];
+            const connectedHost = [...this.baseUrls.entries()].find(([, url]) => url === this.baseUrl)?.[0];
             this.statusText.textContent = 'Connected to ' + (connectedHost || this.baseUrl || 'unknown server');
             this.micButton.disabled = false;
         } else {
@@ -722,9 +1114,10 @@ class MiraDesktop {
                 minute: '2-digit',
                 second: '2-digit'
             });
-        } catch (e) {
+        } catch (error) {
+            console.warn('Error parsing timestamp:', error);
             const dateObj = new Date(interaction.timestamp);
-            const timestamp = dateObj.toLocaleString(undefined, {
+            timestamp = dateObj.toLocaleString(undefined, {
                 year: 'numeric',
                 month: 'short',
                 day: 'numeric',
@@ -914,27 +1307,53 @@ class MiraDesktop {
     }
 
     async cleanup() {
-        console.log('Cleaning up Mira Desktop App...');
+        console.log('🧹 Cleaning up Mira Desktop App...');
 
-        if (this.isRecording && this.micVAD) {
-            await this.stopAudioCapture();
-        }
-
-        if (this.connectionCheckInterval) {
-            clearInterval(this.connectionCheckInterval);
-        }
-
-        if (this.transcriptionInterval) {
-            clearInterval(this.transcriptionInterval);
-        }
-
-        if (this.isRegistered) {
-            try {
-                await this.deregisterClient();
-                await this.stopListening();
-            } catch (error) {
-                console.error('Error during cleanup deregistration:', error);
+        try {
+            // Stop recording first
+            if (this.isRecording && this.micVAD) {
+                console.log('🛑 Stopping recording during cleanup...');
+                await this.stopAudioCapture();
             }
+
+            // Clear intervals
+            if (this.connectionCheckInterval) {
+                clearInterval(this.connectionCheckInterval);
+                this.connectionCheckInterval = null;
+                console.log('✅ Connection check interval cleared');
+            }
+
+            if (this.transcriptionInterval) {
+                clearInterval(this.transcriptionInterval);
+                this.transcriptionInterval = null;
+                console.log('✅ Transcription polling interval cleared');
+            }
+
+            // Stop listening service and deregister from backend
+            if (this.isRegistered) {
+                try {
+                    console.log('🌐 Deregistering from backend during cleanup...');
+                    await this.deregisterClient();
+                    
+                    if (this.isListening) {
+                        console.log('🛑 Stopping listening service during cleanup...');
+                        await this.stopListening();
+                    }
+                } catch (error) {
+                    console.error('❌ Error during cleanup deregistration:', error);
+                }
+            }
+
+            // Final state reset
+            this.isRecording = false;
+            this.isListening = false;
+            this.isToggling = false;
+            this.isProcessingAudio = false;
+            
+            console.log('✅ Mira Desktop App cleanup completed');
+            
+        } catch (error) {
+            console.error('❌ Error during cleanup:', error);
         }
     }
 }

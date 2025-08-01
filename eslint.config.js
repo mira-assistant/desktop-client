@@ -13,7 +13,20 @@ module.exports = [
       sourceType: "script",
       globals: {
         ...globals.node,
-        ...globals.browser
+        ...globals.browser,
+        vad: "readonly",
+        window: "readonly",
+        document: "readonly",
+        fetch: "readonly",
+        AbortController: "readonly",
+        Float32Array: "readonly",
+        Int16Array: "readonly",
+        Uint8Array: "readonly",
+        setInterval: "readonly",
+        clearInterval: "readonly",
+        setTimeout: "readonly",
+        clearTimeout: "readonly",
+        console: "readonly"
       }
     },
     plugins: { n: node },
