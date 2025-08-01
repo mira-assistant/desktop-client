@@ -175,7 +175,7 @@ body {
 .mic-button:hover:not(:disabled):not(.listening) {
     transform: scale(1.05);
     /* Blue shadow when hovering over start listening button */
-    box-shadow: 0 15px 40px rgba(0, 255, 136, 0.7), 
+    box-shadow: 0 15px 40px rgba(0, 255, 136, 0.7),
                 0 0 40px rgba(0, 255, 136, 0.5),
                 0 0 80px rgba(0, 255, 136, 0.3);
 }
@@ -202,7 +202,7 @@ body {
 .mic-button.listening:hover:not(:disabled) {
     transform: scale(1.05);
     /* Red shadow when hovering over stop listening button */
-    box-shadow: 0 15px 40px rgba(255, 68, 68, 0.7), 
+    box-shadow: 0 15px 40px rgba(255, 68, 68, 0.7),
                 0 0 40px rgba(255, 68, 68, 0.5),
                 0 0 80px rgba(255, 68, 68, 0.3);
 }
@@ -511,7 +511,7 @@ body {
     box-shadow: 0 4px 12px rgba(0, 255, 136, 0.15);
 }
 
-.speaker-info {
+.person-info {
     display: flex;
     justify-content: space-between;
     align-items: center;
@@ -520,7 +520,7 @@ body {
     font-weight: 600;
 }
 
-.speaker-name {
+.person-name {
     color: #00cc6a;
     font-weight: 700;
     text-transform: uppercase;
@@ -675,39 +675,39 @@ body {
     .main-content {
         flex-direction: column;
     }
-    
+
     .controls-section {
         flex: none;
         padding: 20px;
     }
-    
+
     .mic-button {
         width: 120px;
         height: 120px;
     }
-    
+
     .mic-button i {
         font-size: 36px;
     }
-    
+
     .transcription-section {
         border-left: none;
         border-top: 1px solid #bbf7d0;
     }
-    
+
     /* Scale down fonts for tablets */
     .app-title {
         font-size: 20px;
     }
-    
+
     .feature-name {
         font-size: 14px;
     }
-    
+
     .feature-description {
         font-size: 12px;
     }
-    
+
     .transcription-item .text {
         font-size: 14px;
     }
@@ -718,27 +718,27 @@ body {
     .app-title {
         font-size: 18px;
     }
-    
+
     .transcription-header h2 {
         font-size: 18px;
     }
-    
+
     .feature-name {
         font-size: 13px;
     }
-    
+
     .feature-description {
         font-size: 11px;
     }
-    
+
     .transcription-item .text {
         font-size: 13px;
     }
-    
+
     .mic-status-text {
         font-size: 14px;
     }
-    
+
     .info-card h3 {
         font-size: 18px;
     }
@@ -749,39 +749,39 @@ body {
     .app-title {
         font-size: 16px;
     }
-    
+
     .transcription-header h2 {
         font-size: 16px;
     }
-    
+
     .feature-name {
         font-size: 12px;
     }
-    
+
     .feature-description {
         font-size: 10px;
     }
-    
+
     .transcription-item .text {
         font-size: 12px;
     }
-    
+
     .mic-status-text {
         font-size: 13px;
     }
-    
+
     .info-card h3 {
         font-size: 16px;
     }
-    
+
     .app-header {
         padding: 12px 16px;
     }
-    
+
     .controls-section {
         padding: 16px;
     }
-    
+
     .microphone-container {
         margin-bottom: 40px;
     }

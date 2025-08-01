@@ -150,7 +150,7 @@ export const API_ENDPOINTS = {
     SERVICE_DISABLE: '/service/disable',
     INTERACTIONS_REGISTER: '/interactions/register',
     INTERACTIONS: '/interactions',
-    SPEAKERS: '/speakers',
+    PERSONS: '/person',
 };
 
 /**

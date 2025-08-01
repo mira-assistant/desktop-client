@@ -408,7 +408,7 @@ export class ApiService extends EventTarget {
      * @returns {Promise<Person|null>} Person object or null if not found
      */
     async getPerson(personId) {
-        const endpoint = `${API_ENDPOINTS.SPEAKERS}/${personId}`;
+        const endpoint = `${API_ENDPOINTS.PERSONS}/${personId}`;
         const response = await this.makeRequest(endpoint, { method: 'GET' });
 
         return response.success && response.data ? Person.fromApiResponse(response.data) : null;
@@ -419,7 +419,7 @@ export class ApiService extends EventTarget {
      * @returns {Promise<Array<Person>>} Array of person objects
      */
     async getPersons() {
-        const response = await this.makeRequest(API_ENDPOINTS.SPEAKERS, { method: 'GET' });
+        const response = await this.makeRequest(API_ENDPOINTS.PERSONS, { method: 'GET' });
 
         if (response.success && response.data && Array.isArray(response.data)) {
             return response.data.map(item => Person.fromApiResponse(item));
