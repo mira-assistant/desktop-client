@@ -238,6 +238,109 @@ describe('ApiService', () => {
         });
     });
 
+    describe('Status Change Detection', () => {
+        test('should emit statusChange event when service status changes', async () => {
+            let statusChangeEventReceived = false;
+            let receivedStatus = null;
+            
+            // Listen for statusChange events
+            apiService.addEventListener('statusChange', (event) => {
+                statusChangeEventReceived = true;
+                receivedStatus = event.detail.enabled;
+            });
+
+            // First call establishes serviceEnabled = true
+            fetch.mockResolvedValueOnce({
+                ok: true,
+                json: () => Promise.resolve({ 
+                    enabled: true,
+                    recent_interactions: [],
+                    features: {}
+                })
+            });
+
+            await apiService.checkConnection();
+            expect(apiService.serviceEnabled).toBe(true);
+            expect(statusChangeEventReceived).toBe(false); // No event on first call
+
+            // Second call changes serviceEnabled from true to false (should trigger event)
+            fetch.mockResolvedValueOnce({
+                ok: true,
+                json: () => Promise.resolve({ 
+                    enabled: false,
+                    recent_interactions: [],
+                    features: {}
+                })
+            });
+
+            await apiService.checkConnection();
+            expect(apiService.serviceEnabled).toBe(false);
+            expect(statusChangeEventReceived).toBe(true);
+            expect(receivedStatus).toBe(false);
+        });
+
+        test('should track service enabled state correctly', async () => {
+            // Mock health response with enabled: true
+            fetch.mockResolvedValueOnce({
+                ok: true,
+                json: () => Promise.resolve({ 
+                    enabled: true,
+                    recent_interactions: [],
+                    features: {}
+                })
+            });
+
+            await apiService.checkConnection();
+            expect(apiService.serviceEnabled).toBe(true);
+
+            // Mock health response with enabled: false
+            fetch.mockResolvedValueOnce({
+                ok: true,
+                json: () => Promise.resolve({ 
+                    enabled: false,
+                    recent_interactions: [],
+                    features: {}
+                })
+            });
+
+            await apiService.checkConnection();
+            expect(apiService.serviceEnabled).toBe(false);
+        });
+
+        test('should not emit statusChange event when status remains the same', async () => {
+            let eventEmitted = false;
+            
+            // Listen for statusChange events
+            apiService.addEventListener('statusChange', () => {
+                eventEmitted = true;
+            });
+
+            // Mock health check responses with same status
+            fetch
+                .mockResolvedValueOnce({
+                    ok: true,
+                    json: () => Promise.resolve({ 
+                        enabled: true,
+                        recent_interactions: [],
+                        features: {}
+                    })
+                })
+                .mockResolvedValueOnce({
+                    ok: true,
+                    json: () => Promise.resolve({ 
+                        enabled: true,  // Same status, no event should be emitted
+                        recent_interactions: [],
+                        features: {}
+                    })
+                });
+
+            await apiService.checkConnection();
+            await apiService.checkConnection();
+            
+            expect(eventEmitted).toBe(false);
+        });
+    });
+
     describe('Cleanup', () => {
         test('should properly clean up resources', () => {
             // Stop health checking is equivalent to cleanup

@@ -89,6 +89,12 @@ class MiraDesktop {
             }
         });
 
+        /** Listen for service status changes */
+        this.apiService.addEventListener('statusChange', (event) => {
+            const { enabled } = event.detail;
+            this.updateServerStatus({ enabled });
+        });
+
         /** Listen for interaction updates */
         this.apiService.addEventListener('interactionsUpdated', (event) => {
             const { interactionIds } = event.detail;
@@ -1224,11 +1230,61 @@ Debug Shortcuts:
         }
     }
 
+    /**
+     * Update server status and handle external service state changes
+     * @param {Object} status - Status object with enabled property
+     */
     async updateServerStatus(status) {
         if (status.enabled && !this.isListening) {
             await this.startListening();
         } else if (!status.enabled && this.isListening) {
-            await this.stopListening();
+            /** Service was disabled externally - run disable functions without backend call */
+            this.log('info', 'Service disabled externally, running local cleanup');
+            await this.handleExternalServiceDisable();
+        }
+    }
+
+    /**
+     * Handle external service disable by running all normal disable functions
+     * without attempting to call the backend disable endpoint
+     */
+    async handleExternalServiceDisable() {
+        try {
+            /** Stop audio capture to ensure recording stops immediately */
+            await this.stopAudioCapture();
+
+            /** Update states to stopped (backend is already disabled) */
+            this.isListening = false;
+            this.updateListeningUI(false);
+            this.stopTranscriptionPolling();
+            
+            this.log('info', 'External service disable cleanup completed');
+            this.debugLog('audio', 'Listening stopped due to external service disable', {
+                externalDisable: true,
+                vadDestroyed: !this.micVAD
+            });
+            
+            /** Show user-friendly message */
+            this.showMessage('Recording stopped - service was disabled remotely', 'warning');
+            
+        } catch (error) {
+            this.log('error', 'Error during external disable cleanup', error);
+            
+            /** Ensure cleanup happens even if there are errors */
+            try {
+                /** Force stop audio capture if not already done */
+                await this.stopAudioCapture();
+                
+                /** Update states to stopped regardless */
+                this.isListening = false;
+                this.updateListeningUI(false);
+                this.stopTranscriptionPolling();
+            } catch (cleanupError) {
+                this.log('error', 'Error during forced external disable cleanup', cleanupError);
+            }
+            
+            /** Show user-friendly error message */
+            this.showMessage('Error during remote disable cleanup: ' + error.message, 'error');
         }
     }
 

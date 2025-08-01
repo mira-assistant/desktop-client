@@ -20,6 +20,7 @@ export class ApiService extends EventTarget {
         this.recentInteractionIds = new Set();
         this.healthCheckInterval = null;
         this.features = {};
+        this.serviceEnabled = null; // Track service enabled state
         
         /** Start automatic health checking */
         this.startHealthChecking();
@@ -49,6 +50,7 @@ export class ApiService extends EventTarget {
     /**
      * Check connection to available servers and establish connection
      * Emits 'connectionChange' event when connection status changes
+     * Emits 'statusChange' event when service enabled status changes
      */
     async checkConnection() {
         let urls = Object.fromEntries(API_CONFIG.BASE_URLS);
@@ -83,6 +85,15 @@ export class ApiService extends EventTarget {
                     /** Update features */
                     this.features = healthData.features || {};
 
+                    /** Check for service status changes and emit event if changed */
+                    const currentServiceEnabled = healthData.enabled !== undefined ? healthData.enabled : true;
+                    if (this.serviceEnabled !== null && this.serviceEnabled !== currentServiceEnabled) {
+                        this.dispatchEvent(new CustomEvent('statusChange', {
+                            detail: { enabled: currentServiceEnabled }
+                        }));
+                    }
+                    this.serviceEnabled = currentServiceEnabled;
+
                     /** Emit connection change event if status changed */
                     if (!wasConnected) {
                         this.dispatchEvent(new CustomEvent('connectionChange', {
@@ -103,6 +114,7 @@ export class ApiService extends EventTarget {
         if (!connected && this.isConnected) {
             this.isConnected = false;
             this.isRegistered = false;
+            this.serviceEnabled = null; // Reset service status when disconnected
             this.dispatchEvent(new CustomEvent('connectionChange', {
                 detail: { connected: false }
             }));
