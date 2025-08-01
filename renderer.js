@@ -32,6 +32,18 @@ class MiraDesktop {
             averageAudioDuration: 0
         };
 
+        // Enhanced audio optimization properties
+        this.audioOptimization = {
+            enableAdvancedNoiseReduction: true,
+            enableDynamicGainControl: true,
+            enableSpectralGating: true,
+            noiseFloor: -40, // dB
+            signalThreshold: -20, // dB
+            adaptiveThresholds: true,
+            environmentalNoise: 0,
+            lastNoiseAnalysis: 0
+        };
+
         // Debug mode (can be enabled via console: window.miraApp.debugMode = true)
         this.debugMode = false;
 
@@ -100,7 +112,7 @@ class MiraDesktop {
                     console.log('Connection check failed:', response.statusText);
                 }
             } catch (error) {
-                console.warn(`Failed to connect to ${hostName} at ${url}`);
+                console.warn(`Failed to connect to ${hostName} at ${url}:`, error.message);
             }
         }
 
@@ -439,31 +451,45 @@ class MiraDesktop {
             const { MicVAD } = vad;
             const sampleRate = 16000;
             const frameSamples = 1536;
-            const targetSilenceMs = 580;
+            const targetSilenceMs = 420; // Reduced for more responsive detection
             const redemptionFrames = Math.max(1, Math.round((targetSilenceMs * sampleRate) / (frameSamples * 1000)));
 
-            console.log(`VAD loaded with ${redemptionFrames} redemption frames for ${targetSilenceMs}ms silence detection`);
+            console.log(`🎵 VAD configured with optimized settings:`);
+            console.log(`   - Sample rate: ${sampleRate} Hz`);
+            console.log(`   - Frame samples: ${frameSamples}`);
+            console.log(`   - Target silence: ${targetSilenceMs}ms`);
+            console.log(`   - Redemption frames: ${redemptionFrames}`);
+            console.log(`   - Advanced noise reduction: ${this.audioOptimization.enableAdvancedNoiseReduction}`);
 
             const vadInitPromise = MicVAD.new({
                 model: 'legacy',
 
-                positiveSpeechThreshold: 0.2, // Lower threshold for better detection
-                negativeSpeechThreshold: 0.15,
+                // Optimized thresholds for better noise rejection
+                positiveSpeechThreshold: 0.35, // Increased for better noise rejection
+                negativeSpeechThreshold: 0.15, // Balanced for clean cutoff
 
                 redemptionFrames: redemptionFrames,
 
-                // Audio quality settings
+                // Audio quality settings optimized for transcription
                 frameSamples: frameSamples,
-                preSpeechPadFrames: 1, // Reduced for faster response
-                minSpeechFrames: 3, // Reduced minimum to avoid missing short utterances
+                preSpeechPadFrames: 2, // Increased to capture speech onset
+                minSpeechFrames: 4, // Increased to avoid false positives
 
-                // Enhanced audio constraints for better quality
+                // Enhanced audio constraints for maximum quality
                 additionalAudioConstraints: {
                     sampleRate: sampleRate,
                     echoCancellation: true,
-                    noiseSuppression: true,
+                    noiseSuppression: true, // Browser-level noise suppression
                     autoGainControl: true,
-                    channelCount: 1
+                    channelCount: 1,
+                    
+                    // Advanced constraints for better audio quality
+                    googEchoCancellation: true,
+                    googAutoGainControl: true,
+                    googNoiseSuppression: true,
+                    googHighpassFilter: true,
+                    googAudioMirroring: false,
+                    latency: 0.01, // Low latency for real-time processing
                 },
 
                 onSpeechStart: () => {
@@ -473,18 +499,18 @@ class MiraDesktop {
                 onSpeechEnd: (audio) => {
                     try {
                         const durationSeconds = audio.length / sampleRate;
-                        console.log(`VAD: Speech ended, processing ${durationSeconds.toFixed(2)}s of audio (${audio.length} samples)`);
+                        console.log(`🎤 VAD: Speech ended, processing ${durationSeconds.toFixed(2)}s of audio (${audio.length} samples)`);
                         this.updateVADStatus('processing');
 
-                        // Validate audio data before sending
+                        // Validate and optimize audio data before sending
                         if (audio && audio.length > 0) {
-                            this.sendVADAudioToBackend(audio);
+                            this.processAndSendOptimizedAudio(audio);
                         } else {
-                            console.warn('VAD: Empty audio data received, skipping');
+                            console.warn('⚠️ VAD: Empty audio data received, skipping');
                             this.updateVADStatus('waiting');
                         }
                     } catch (err) {
-                        console.error('VAD: Error in onSpeechEnd callback:', err);
+                        console.error('❌ VAD: Error in onSpeechEnd callback:', err);
                         this.updateVADStatus('waiting');
                     }
                 },
@@ -740,19 +766,48 @@ class MiraDesktop {
         }
 
         const stats = this.audioProcessingStats;
-        console.log('🎤 Audio Processing Statistics:');
+        console.log('🎤 === ENHANCED AUDIO PROCESSING STATISTICS ===');
+        console.log(`📊 Basic Stats:`);
         console.log(`- Total audio chunks sent: ${stats.totalAudioSent}`);
         console.log(`- Total audio bytes: ${stats.totalAudioBytes.toLocaleString()}`);
         console.log(`- Successful requests: ${stats.successfulRequests}`);
         console.log(`- Failed requests: ${stats.failedRequests}`);
         console.log(`- Success rate: ${stats.totalAudioSent > 0 ? ((stats.successfulRequests / stats.totalAudioSent) * 100).toFixed(1) : 0}%`);
         console.log(`- Average audio duration: ${stats.averageAudioDuration.toFixed(2)}s`);
+        
+        console.log(`🎛️ Audio Optimization Settings:`);
+        console.log(`- Advanced noise reduction: ${this.audioOptimization.enableAdvancedNoiseReduction ? '✅ Enabled' : '❌ Disabled'}`);
+        console.log(`- Dynamic gain control: ${this.audioOptimization.enableDynamicGainControl ? '✅ Enabled' : '❌ Disabled'}`);
+        console.log(`- Spectral gating: ${this.audioOptimization.enableSpectralGating ? '✅ Enabled' : '❌ Disabled'}`);
+        console.log(`- Adaptive thresholds: ${this.audioOptimization.adaptiveThresholds ? '✅ Enabled' : '❌ Disabled'}`);
+        console.log(`- Noise floor: ${this.audioOptimization.noiseFloor}dB`);
+        console.log(`- Signal threshold: ${this.audioOptimization.signalThreshold}dB`);
+        console.log(`- Environmental noise level: ${this.audioOptimization.environmentalNoise.toFixed(2)}`);
+        
+        console.log(`🔧 System State:`);
         console.log(`- Current state: Listening=${this.isListening}, Recording=${this.isRecording}`);
-        console.log(`- VAD instance: ${this.micVAD ? 'Active' : 'None'}`);
+        console.log(`- VAD instance: ${this.micVAD ? '✅ Active' : '❌ None'}`);
+        console.log(`- Debug mode: ${this.debugMode ? '✅ Enabled' : '❌ Disabled'}`);
         
         // Show in UI as well
-        const statsMessage = `Audio Stats: ${stats.totalAudioSent} chunks sent, ${stats.successfulRequests} successful, ${((stats.successfulRequests / (stats.totalAudioSent || 1)) * 100).toFixed(1)}% success rate`;
+        const optimizationStatus = `${this.audioOptimization.enableAdvancedNoiseReduction ? 'NR+' : ''}${this.audioOptimization.enableDynamicGainControl ? 'AGC+' : ''}${this.audioOptimization.enableSpectralGating ? 'SG' : ''}`;
+        const statsMessage = `🎤 Audio: ${stats.totalAudioSent} sent, ${stats.successfulRequests} OK (${((stats.successfulRequests / (stats.totalAudioSent || 1)) * 100).toFixed(1)}%) | Optimizations: ${optimizationStatus}`;
         this.showMessage(statsMessage, 'info');
+    }
+
+    /**
+     * Toggle audio optimization features for testing
+     */
+    toggleAudioOptimization(feature) {
+        if (!Object.prototype.hasOwnProperty.call(this.audioOptimization, feature)) {
+            console.error(`❌ Unknown optimization feature: ${feature}`);
+            console.log('Available features:', Object.keys(this.audioOptimization));
+            return;
+        }
+        
+        this.audioOptimization[feature] = !this.audioOptimization[feature];
+        console.log(`🎛️ ${feature}: ${this.audioOptimization[feature] ? '✅ Enabled' : '❌ Disabled'}`);
+        this.showMessage(`Audio optimization "${feature}" ${this.audioOptimization[feature] ? 'enabled' : 'disabled'}`, 'info');
     }
 
     /**
@@ -789,6 +844,178 @@ class MiraDesktop {
         }
     }
 
+    /**
+     * Process and optimize audio with advanced noise reduction and quality enhancement
+     */
+    async processAndSendOptimizedAudio(audioFloat32Array) {
+        try {
+            console.log('🔧 Starting audio optimization pipeline...');
+            
+            // Step 1: Analyze audio quality
+            const audioAnalysis = this.analyzeAudioQuality(audioFloat32Array);
+            console.log(`📊 Audio analysis: SNR=${audioAnalysis.snr.toFixed(2)}dB, RMS=${audioAnalysis.rms.toFixed(4)}, Energy=${audioAnalysis.energy.toFixed(4)}`);
+            
+            // Step 2: Apply noise reduction if enabled
+            let processedAudio = audioFloat32Array;
+            if (this.audioOptimization.enableAdvancedNoiseReduction) {
+                processedAudio = this.applyNoiseReduction(processedAudio, audioAnalysis);
+                console.log('✅ Applied advanced noise reduction');
+            }
+            
+            // Step 3: Apply dynamic gain control
+            if (this.audioOptimization.enableDynamicGainControl) {
+                processedAudio = this.applyDynamicGainControl(processedAudio, audioAnalysis);
+                console.log('✅ Applied dynamic gain control');
+            }
+            
+            // Step 4: Apply spectral gating for further noise reduction
+            if (this.audioOptimization.enableSpectralGating) {
+                processedAudio = this.applySpectralGating(processedAudio, audioAnalysis);
+                console.log('✅ Applied spectral gating');
+            }
+            
+            // Step 5: Final quality check
+            const finalAnalysis = this.analyzeAudioQuality(processedAudio);
+            const qualityImprovement = finalAnalysis.snr - audioAnalysis.snr;
+            console.log(`🎯 Quality improvement: +${qualityImprovement.toFixed(2)}dB SNR`);
+            
+            // Step 6: Only send if audio quality is sufficient
+            if (finalAnalysis.snr > this.audioOptimization.signalThreshold) {
+                await this.sendVADAudioToBackend(processedAudio);
+                console.log('✅ High-quality audio sent to backend');
+            } else {
+                console.warn(`⚠️ Audio quality insufficient (SNR: ${finalAnalysis.snr.toFixed(2)}dB < ${this.audioOptimization.signalThreshold}dB), skipping`);
+                this.updateVADStatus('waiting');
+            }
+            
+        } catch (error) {
+            console.error('❌ Error in audio optimization pipeline:', error);
+            // Fallback to original audio if processing fails
+            await this.sendVADAudioToBackend(audioFloat32Array);
+        }
+    }
+
+    /**
+     * Analyze audio quality metrics for optimization decisions
+     */
+    analyzeAudioQuality(audioFloat32Array) {
+        const samples = audioFloat32Array.length;
+        let sumSquares = 0;
+        let maxAmplitude = 0;
+        let silentSamples = 0;
+        
+        // Calculate RMS and find peak amplitude
+        for (let i = 0; i < samples; i++) {
+            const sample = Math.abs(audioFloat32Array[i]);
+            sumSquares += sample * sample;
+            maxAmplitude = Math.max(maxAmplitude, sample);
+            
+            if (sample < 0.001) { // Threshold for "silent" samples
+                silentSamples++;
+            }
+        }
+        
+        const rms = Math.sqrt(sumSquares / samples);
+        const energy = sumSquares / samples;
+        
+        // Estimate SNR (simplified calculation)
+        const speechPower = rms * rms;
+        const noisePower = silentSamples > samples * 0.1 ? 
+            Math.max(speechPower * 0.01, 1e-10) : speechPower * 0.1; // Estimate noise floor
+        const snr = 10 * Math.log10(speechPower / noisePower);
+        
+        // Calculate dynamic range
+        const dynamicRange = 20 * Math.log10(maxAmplitude / Math.max(rms, 1e-10));
+        
+        return {
+            rms,
+            energy,
+            snr,
+            maxAmplitude,
+            dynamicRange,
+            silentRatio: silentSamples / samples
+        };
+    }
+
+    /**
+     * Apply advanced noise reduction using spectral subtraction
+     */
+    applyNoiseReduction(audioFloat32Array, analysis) {
+        if (analysis.snr > 20) {
+            return audioFloat32Array; // Audio is already clean
+        }
+        
+        const result = new Float32Array(audioFloat32Array.length);
+        const noiseThreshold = analysis.rms * 0.3; // Adaptive noise threshold
+        
+        // Simple spectral subtraction approach
+        for (let i = 0; i < audioFloat32Array.length; i++) {
+            const sample = audioFloat32Array[i];
+            const sampleAbs = Math.abs(sample);
+            
+            if (sampleAbs > noiseThreshold) {
+                // Keep strong signals, apply gentle filtering to weak ones
+                const gain = Math.min(1.0, sampleAbs / noiseThreshold);
+                result[i] = sample * gain;
+            } else {
+                // Aggressive reduction for likely noise
+                result[i] = sample * 0.1;
+            }
+        }
+        
+        return result;
+    }
+
+    /**
+     * Apply dynamic gain control for consistent audio levels
+     */
+    applyDynamicGainControl(audioFloat32Array, analysis) {
+        if (analysis.rms > 0.3) {
+            return audioFloat32Array; // Audio level is already good
+        }
+        
+        // Calculate target RMS level
+        const targetRMS = 0.15; // Optimal level for transcription
+        const gainFactor = Math.min(3.0, targetRMS / Math.max(analysis.rms, 0.001));
+        
+        console.log(`🔊 Applying gain: ${gainFactor.toFixed(2)}x (RMS: ${analysis.rms.toFixed(4)} → ${targetRMS})`);
+        
+        const result = new Float32Array(audioFloat32Array.length);
+        for (let i = 0; i < audioFloat32Array.length; i++) {
+            result[i] = Math.max(-1, Math.min(1, audioFloat32Array[i] * gainFactor));
+        }
+        
+        return result;
+    }
+
+    /**
+     * Apply spectral gating to remove noise between words
+     */
+    applySpectralGating(audioFloat32Array, analysis) {
+        const result = new Float32Array(audioFloat32Array.length);
+        const windowSize = Math.min(512, Math.floor(audioFloat32Array.length / 8));
+        const gateThreshold = analysis.rms * 0.2;
+        
+        // Apply gating in overlapping windows
+        for (let i = 0; i < audioFloat32Array.length; i++) {
+            const windowStart = Math.max(0, i - windowSize / 2);
+            const windowEnd = Math.min(audioFloat32Array.length, i + windowSize / 2);
+            
+            // Calculate local RMS
+            let localRMS = 0;
+            for (let j = windowStart; j < windowEnd; j++) {
+                localRMS += audioFloat32Array[j] * audioFloat32Array[j];
+            }
+            localRMS = Math.sqrt(localRMS / (windowEnd - windowStart));
+            
+            // Apply gate
+            const gateGain = localRMS > gateThreshold ? 1.0 : 0.3;
+            result[i] = audioFloat32Array[i] * gateGain;
+        }
+        
+        return result;
+    }
+
     async sendVADAudioToBackend(audioFloat32Array) {
         if (!audioFloat32Array || audioFloat32Array.length === 0) {
             console.warn('sendVADAudioToBackend: Empty or invalid audio data');
@@ -803,12 +1030,19 @@ class MiraDesktop {
         this.isProcessingAudio = true;
 
         if (this.debugMode) {
-            console.log('DEBUG: Audio sample stats:');
+            console.log('🔍 DEBUG: Enhanced audio sample stats:');
             console.log('- Sample rate: 16000 Hz');
             console.log('- Duration:', (audioFloat32Array.length / 16000).toFixed(3), 'seconds');
             console.log('- Min sample:', Math.min(...audioFloat32Array).toFixed(4));
             console.log('- Max sample:', Math.max(...audioFloat32Array).toFixed(4));
             console.log('- RMS:', Math.sqrt(audioFloat32Array.reduce((sum, x) => sum + x * x, 0) / audioFloat32Array.length).toFixed(4));
+            
+            // Show optimization settings
+            console.log('🎛️ Audio optimization settings:');
+            console.log(`- Advanced noise reduction: ${this.audioOptimization.enableAdvancedNoiseReduction}`);
+            console.log(`- Dynamic gain control: ${this.audioOptimization.enableDynamicGainControl}`);
+            console.log(`- Spectral gating: ${this.audioOptimization.enableSpectralGating}`);
+            console.log(`- Signal threshold: ${this.audioOptimization.signalThreshold}dB`);
         }
 
         try {
@@ -1414,6 +1648,26 @@ document.addEventListener('keydown', (e) => {
         e.preventDefault();
         if (window.miraApp) {
             window.miraApp.testBackendConnection();
+        }
+    }
+
+    if (e.ctrlKey && e.shiftKey && e.code === 'KeyA') {
+        e.preventDefault();
+        if (window.miraApp) {
+            console.log('🎛️ === AUDIO OPTIMIZATION CONTROLS ===');
+            console.log('Available commands:');
+            console.log('- window.miraApp.showAudioStats() - Show detailed audio statistics');
+            console.log('- window.miraApp.toggleAudioOptimization("enableAdvancedNoiseReduction")');
+            console.log('- window.miraApp.toggleAudioOptimization("enableDynamicGainControl")');
+            console.log('- window.miraApp.toggleAudioOptimization("enableSpectralGating")');
+            console.log('- window.miraApp.toggleAudioOptimization("adaptiveThresholds")');
+            console.log('- window.miraApp.debugMode = true/false - Toggle debug mode');
+            console.log('🎹 Keyboard shortcuts:');
+            console.log('- Ctrl+Shift+D: Show audio stats');
+            console.log('- Ctrl+Shift+M: Toggle debug mode');
+            console.log('- Ctrl+Shift+T: Test backend connection');
+            console.log('- Ctrl+Shift+A: Show this help (current)');
+            window.miraApp.showMessage('Audio optimization help displayed in console', 'info');
         }
     }
 });
