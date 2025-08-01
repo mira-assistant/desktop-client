@@ -173,13 +173,11 @@ class MiraDesktop {
         }
 
         if (this.isToggling) {
-            console.log('⚠️ Toggle already in progress, ignoring');
             return;
         }
 
         this.isToggling = true;
         const originalButtonText = this.micStatusText.textContent;
-        console.log(`🔄 Toggling listening state (currently: ${this.isListening ? 'listening' : 'stopped'})`);
 
         try {
             // Provide immediate UI feedback
@@ -190,13 +188,9 @@ class MiraDesktop {
             await new Promise(resolve => setTimeout(resolve, 50));
 
             if (this.isListening) {
-                console.log('🛑 Stopping listening...');
                 await this.stopListening();
-                console.log('✅ Successfully stopped listening');
             } else {
-                console.log('▶️ Starting listening...');
                 await this.startListening();
-                console.log('✅ Successfully started listening');
             }
             
         } catch (error) {
@@ -224,12 +218,9 @@ class MiraDesktop {
             // Log detailed error information for debugging
             console.error('Toggle listening error details:', {
                 message: error.message,
-                name: error.name,
-                stack: error.stack,
                 isConnected: this.isConnected,
                 isListening: this.isListening,
-                isRecording: this.isRecording,
-                isToggling: this.isToggling
+                isRecording: this.isRecording
             });
             
         } finally {
@@ -241,8 +232,6 @@ class MiraDesktop {
             if (!this.isListening && this.micStatusText.textContent.includes('...')) {
                 this.micStatusText.textContent = originalButtonText;
             }
-            
-            console.log(`✅ Toggle completed. Current state - Listening: ${this.isListening}, Recording: ${this.isRecording}`);
         }
     }
 
@@ -272,29 +261,19 @@ class MiraDesktop {
     }
 
     async stopListening() {
-        console.log('🛑 Starting listening service stop process...');
-        
         try {
             // First, stop audio capture to ensure recording stops immediately
-            console.log('🎤 Stopping audio capture...');
             await this.stopAudioCapture();
 
             // Send disable request to backend with timeout and retry logic
-            console.log('🌐 Sending disable request to backend...');
             const backendStopResult = await this.sendBackendStopRequest();
             
             if (backendStopResult.success) {
-                console.log('✅ Backend disabled successfully');
-                
                 // Update states only after successful backend confirmation
                 this.isListening = false;
                 this.updateListeningUI(false);
                 this.stopTranscriptionPolling();
-                
-                console.log('✅ Listening stopped successfully');
             } else {
-                console.warn('⚠️ Backend disable request failed, but audio capture is stopped');
-                
                 // Even if backend fails, ensure local state is consistent
                 this.isListening = false;
                 this.updateListeningUI(false);
@@ -306,9 +285,8 @@ class MiraDesktop {
                     'warning'
                 );
             }
-            
         } catch (error) {
-            console.error('❌ Error stopping listening:', error);
+            console.error('Error stopping listening:', error);
             
             // Ensure cleanup happens even if there are errors
             try {
@@ -319,21 +297,9 @@ class MiraDesktop {
                 this.isListening = false;
                 this.updateListeningUI(false);
                 this.stopTranscriptionPolling();
-                
-                console.log('✅ Forced stop completed');
             } catch (cleanupError) {
-                console.error('❌ Error during forced stop cleanup:', cleanupError);
+                console.error('Error during forced stop cleanup:', cleanupError);
             }
-            
-            // Log detailed error information
-            console.error('Stop listening error details:', {
-                message: error.message,
-                name: error.name,
-                stack: error.stack,
-                isConnected: this.isConnected,
-                isListening: this.isListening,
-                isRecording: this.isRecording
-            });
             
             // Show user-friendly error message
             this.showMessage('Error stopping recording: ' + error.message, 'error');
@@ -346,16 +312,11 @@ class MiraDesktop {
      * Send stop request to backend with proper error handling and timeout
      */
     async sendBackendStopRequest(maxRetries = 2, timeout = 10000) {
-        console.log('🌐 Attempting to disable backend service...');
-        
         for (let attempt = 1; attempt <= maxRetries; attempt++) {
             try {
-                console.log(`🔄 Backend disable attempt ${attempt}/${maxRetries}`);
-                
                 const controller = new AbortController();
                 const timeoutId = setTimeout(() => {
                     controller.abort();
-                    console.warn(`⏰ Backend disable request timeout after ${timeout}ms`);
                 }, timeout);
 
                 const response = await fetch(`${this.baseUrl}/service/disable`, {
@@ -369,11 +330,10 @@ class MiraDesktop {
                 clearTimeout(timeoutId);
 
                 if (response.ok) {
-                    console.log('✅ Backend service disabled successfully');
                     return { success: true, attempt };
                 } else {
                     const errorText = await response.text();
-                    console.error(`❌ Backend disable failed (attempt ${attempt}):`, response.status, errorText);
+                    console.error(`Backend disable failed (attempt ${attempt}):`, response.status, errorText);
                     
                     if (attempt === maxRetries) {
                         return { 
@@ -388,15 +348,7 @@ class MiraDesktop {
                 }
                 
             } catch (error) {
-                console.error(`❌ Backend disable request error (attempt ${attempt}):`, error);
-                
-                if (error.name === 'AbortError') {
-                    console.warn('⏰ Backend request timed out');
-                } else if (error.message.includes('Failed to fetch') || error.message.includes('network')) {
-                    console.warn('🌐 Network error contacting backend');
-                } else {
-                    console.error('❌ Unexpected error:', error);
-                }
+                console.error(`Backend disable request error (attempt ${attempt}):`, error);
                 
                 if (attempt === maxRetries) {
                     return { 
@@ -434,7 +386,6 @@ class MiraDesktop {
 
     async startAudioCapture() {
         try {
-            console.log('Requesting microphone access...');
             await this.waitForVADLibrary();
 
             if (typeof vad === 'undefined') {
@@ -453,13 +404,6 @@ class MiraDesktop {
             const frameSamples = 1536;
             const targetSilenceMs = 420; // Reduced for more responsive detection
             const redemptionFrames = Math.max(1, Math.round((targetSilenceMs * sampleRate) / (frameSamples * 1000)));
-
-            console.log(`🎵 VAD configured with optimized settings:`);
-            console.log(`   - Sample rate: ${sampleRate} Hz`);
-            console.log(`   - Frame samples: ${frameSamples}`);
-            console.log(`   - Target silence: ${targetSilenceMs}ms`);
-            console.log(`   - Redemption frames: ${redemptionFrames}`);
-            console.log(`   - Advanced noise reduction: ${this.audioOptimization.enableAdvancedNoiseReduction}`);
 
             const vadInitPromise = MicVAD.new({
                 model: 'legacy',
@@ -499,31 +443,26 @@ class MiraDesktop {
                 onSpeechEnd: (audio) => {
                     try {
                         const durationSeconds = audio.length / sampleRate;
-                        console.log(`🎤 VAD: Speech ended, processing ${durationSeconds.toFixed(2)}s of audio (${audio.length} samples)`);
                         this.updateVADStatus('processing');
 
                         // Validate and optimize audio data before sending
                         if (audio && audio.length > 0) {
                             this.processAndSendOptimizedAudio(audio);
                         } else {
-                            console.warn('⚠️ VAD: Empty audio data received, skipping');
                             this.updateVADStatus('waiting');
                         }
                     } catch (err) {
-                        console.error('❌ VAD: Error in onSpeechEnd callback:', err);
+                        console.error('VAD: Error in onSpeechEnd callback:', err);
                         this.updateVADStatus('waiting');
                     }
                 },
 
                 onVADMisfire: () => {
-                    console.log('VAD: Speech detected but too short (misfire)');
                     this.updateVADStatus('waiting');
                 },
 
                 onFrameProcessed: (probabilities) => {
-                    if (probabilities && probabilities.isSpeech > 0.5) {
-                        console.log('VAD probability:', probabilities.isSpeech.toFixed(3));
-                    }
+                    // Optional: can be used for debugging
                 },
 
                 onError: (error) => {
@@ -561,7 +500,6 @@ class MiraDesktop {
             console.error('Audio capture error details:', {
                 message: error.message,
                 name: error.name,
-                stack: error.stack,
                 vadLibraryLoaded: window.vadLibraryLoaded,
                 vadLibraryLoadError: window.vadLibraryLoadError
             });
@@ -639,36 +577,29 @@ class MiraDesktop {
      * Force stop all active audio tracks to ensure recording is completely stopped
      */
     async forceStopAllAudioTracks() {
-        console.log('🔍 Checking for active audio tracks...');
-        
         try {
             // Get all media devices
             const mediaDevices = navigator.mediaDevices;
             if (!mediaDevices || !mediaDevices.enumerateDevices) {
-                console.log('ℹ️ MediaDevices API not available');
                 return;
             }
 
             // Check if there are any active media streams
-            // Note: We can't directly access all streams, but we can check getUserMedia permissions
             let activeStreams = 0;
             
             // Try to detect active streams by checking permissions
             try {
                 const permissionStatus = await navigator.permissions.query({ name: 'microphone' });
-                console.log('🎤 Microphone permission status:', permissionStatus.state);
             } catch (permError) {
-                console.log('ℹ️ Could not check microphone permission status:', permError.message);
+                // Ignore permission check errors
             }
 
             // The VAD library should clean up its own streams, but let's add a verification step
             // We'll try to create a new temporary stream to verify microphone access is properly released
             await this.verifyMicrophoneIsReleased();
             
-            console.log(`✅ Audio track cleanup completed (${activeStreams} streams processed)`);
-            
         } catch (error) {
-            console.error('❌ Error during audio track cleanup:', error);
+            console.error('Error during audio track cleanup:', error);
             // Continue execution - this is a best-effort cleanup
         }
     }
@@ -677,8 +608,6 @@ class MiraDesktop {
      * Verify that the microphone is properly released by the VAD library
      */
     async verifyMicrophoneIsReleased() {
-        console.log('🔍 Verifying microphone is released...');
-        
         try {
             // Try to get microphone access briefly to verify it's not locked
             const testStream = await navigator.mediaDevices.getUserMedia({ 
@@ -692,22 +621,17 @@ class MiraDesktop {
             if (testStream) {
                 testStream.getTracks().forEach(track => {
                     track.stop();
-                    console.log('✅ Test audio track stopped:', track.id);
                 });
-                console.log('✅ Microphone is properly released - test stream created and stopped');
             }
             
         } catch (error) {
             if (error.name === 'NotAllowedError') {
-                console.log('ℹ️ Microphone permission denied (expected if user has denied access)');
+                // Expected if user has denied access
             } else if (error.name === 'NotFoundError') {
-                console.log('ℹ️ No microphone found');
+                // No microphone found
             } else if (error.name === 'AbortError' || error.message.includes('busy')) {
-                console.warn('⚠️ Microphone may still be in use by another process:', error.message);
                 // This suggests the microphone wasn't properly released
                 throw new Error('Microphone appears to still be in use after VAD destruction');
-            } else {
-                console.warn('⚠️ Error verifying microphone release:', error);
             }
         }
     }
@@ -716,20 +640,10 @@ class MiraDesktop {
      * Verify that recording has actually stopped
      */
     async verifyRecordingIsStopped() {
-        console.log('🔍 Verifying recording is stopped...');
-        
         // Check internal state
         if (this.isRecording) {
-            console.warn('⚠️ Recording state is still true after stop attempt');
+            console.log('Recording state verification - isRecording:', this.isRecording, 'micVAD:', !!this.micVAD);
         }
-        
-        // Check VAD instance
-        if (this.micVAD) {
-            console.warn('⚠️ VAD instance still exists after stop attempt');
-        }
-        
-        // Additional verification could be added here
-        console.log('✅ Recording state verification completed');
     }
 
     /**
@@ -740,12 +654,6 @@ class MiraDesktop {
         // Note: This is a placeholder for cancel command detection
         // In a full implementation, this could use a lightweight speech recognition
         // to detect "Mira cancel" or similar commands locally before sending to backend
-        
-        if (this.debugMode) {
-            console.log('🔍 Checking for cancel commands in audio...');
-            // For now, we'll just log that we're checking
-            console.log('ℹ️ Cancel command detection not implemented yet');
-        }
         
         // Future implementation could:
         // 1. Use a lightweight local speech recognition model
@@ -761,37 +669,24 @@ class MiraDesktop {
      */
     showAudioStats() {
         if (!this.audioProcessingStats) {
-            console.log('ℹ️ No audio stats available');
+            console.log('No audio stats available');
             return;
         }
 
         const stats = this.audioProcessingStats;
-        console.log('🎤 === ENHANCED AUDIO PROCESSING STATISTICS ===');
-        console.log(`📊 Basic Stats:`);
-        console.log(`- Total audio chunks sent: ${stats.totalAudioSent}`);
-        console.log(`- Total audio bytes: ${stats.totalAudioBytes.toLocaleString()}`);
-        console.log(`- Successful requests: ${stats.successfulRequests}`);
-        console.log(`- Failed requests: ${stats.failedRequests}`);
-        console.log(`- Success rate: ${stats.totalAudioSent > 0 ? ((stats.successfulRequests / stats.totalAudioSent) * 100).toFixed(1) : 0}%`);
-        console.log(`- Average audio duration: ${stats.averageAudioDuration.toFixed(2)}s`);
+        console.log('=== AUDIO PROCESSING STATISTICS ===');
+        console.log(`Total audio chunks sent: ${stats.totalAudioSent}`);
+        console.log(`Successful requests: ${stats.successfulRequests}`);
+        console.log(`Failed requests: ${stats.failedRequests}`);
+        console.log(`Success rate: ${stats.totalAudioSent > 0 ? ((stats.successfulRequests / stats.totalAudioSent) * 100).toFixed(1) : 0}%`);
         
-        console.log(`🎛️ Audio Optimization Settings:`);
-        console.log(`- Advanced noise reduction: ${this.audioOptimization.enableAdvancedNoiseReduction ? '✅ Enabled' : '❌ Disabled'}`);
-        console.log(`- Dynamic gain control: ${this.audioOptimization.enableDynamicGainControl ? '✅ Enabled' : '❌ Disabled'}`);
-        console.log(`- Spectral gating: ${this.audioOptimization.enableSpectralGating ? '✅ Enabled' : '❌ Disabled'}`);
-        console.log(`- Adaptive thresholds: ${this.audioOptimization.adaptiveThresholds ? '✅ Enabled' : '❌ Disabled'}`);
-        console.log(`- Noise floor: ${this.audioOptimization.noiseFloor}dB`);
-        console.log(`- Signal threshold: ${this.audioOptimization.signalThreshold}dB`);
-        console.log(`- Environmental noise level: ${this.audioOptimization.environmentalNoise.toFixed(2)}`);
+        console.log(`Audio optimization settings:`);
+        console.log(`- Advanced noise reduction: ${this.audioOptimization.enableAdvancedNoiseReduction}`);
+        console.log(`- Dynamic gain control: ${this.audioOptimization.enableDynamicGainControl}`);
+        console.log(`- Spectral gating: ${this.audioOptimization.enableSpectralGating}`);
         
-        console.log(`🔧 System State:`);
-        console.log(`- Current state: Listening=${this.isListening}, Recording=${this.isRecording}`);
-        console.log(`- VAD instance: ${this.micVAD ? '✅ Active' : '❌ None'}`);
-        console.log(`- Debug mode: ${this.debugMode ? '✅ Enabled' : '❌ Disabled'}`);
-        
-        // Show in UI as well
         const optimizationStatus = `${this.audioOptimization.enableAdvancedNoiseReduction ? 'NR+' : ''}${this.audioOptimization.enableDynamicGainControl ? 'AGC+' : ''}${this.audioOptimization.enableSpectralGating ? 'SG' : ''}`;
-        const statsMessage = `🎤 Audio: ${stats.totalAudioSent} sent, ${stats.successfulRequests} OK (${((stats.successfulRequests / (stats.totalAudioSent || 1)) * 100).toFixed(1)}%) | Optimizations: ${optimizationStatus}`;
+        const statsMessage = `Audio: ${stats.totalAudioSent} sent, ${stats.successfulRequests} OK (${((stats.successfulRequests / (stats.totalAudioSent || 1)) * 100).toFixed(1)}%) | Optimizations: ${optimizationStatus}`;
         this.showMessage(statsMessage, 'info');
     }
 
@@ -800,13 +695,13 @@ class MiraDesktop {
      */
     toggleAudioOptimization(feature) {
         if (!Object.prototype.hasOwnProperty.call(this.audioOptimization, feature)) {
-            console.error(`❌ Unknown optimization feature: ${feature}`);
+            console.error(`Unknown optimization feature: ${feature}`);
             console.log('Available features:', Object.keys(this.audioOptimization));
             return;
         }
         
         this.audioOptimization[feature] = !this.audioOptimization[feature];
-        console.log(`🎛️ ${feature}: ${this.audioOptimization[feature] ? '✅ Enabled' : '❌ Disabled'}`);
+        console.log(`${feature}: ${this.audioOptimization[feature] ? 'Enabled' : 'Disabled'}`);
         this.showMessage(`Audio optimization "${feature}" ${this.audioOptimization[feature] ? 'enabled' : 'disabled'}`, 'info');
     }
 
@@ -814,10 +709,8 @@ class MiraDesktop {
      * Test backend connection with detailed logging
      */
     async testBackendConnection() {
-        console.log('🔍 Testing backend connection...');
-        
         if (!this.baseUrl) {
-            console.warn('⚠️ No backend URL configured');
+            console.warn('No backend URL configured');
             this.showMessage('No backend URL configured', 'warning');
             return;
         }
@@ -832,14 +725,14 @@ class MiraDesktop {
 
             if (response.ok) {
                 const data = await response.json();
-                console.log(`✅ Backend connection test successful (${duration}ms):`, data);
+                console.log(`Backend connection test successful (${duration}ms):`, data);
                 this.showMessage(`Backend connection OK (${duration}ms)`, 'info');
             } else {
-                console.error(`❌ Backend connection test failed: ${response.status} ${response.statusText}`);
+                console.error(`Backend connection test failed: ${response.status} ${response.statusText}`);
                 this.showMessage(`Backend test failed: ${response.status}`, 'error');
             }
         } catch (error) {
-            console.error('❌ Backend connection test error:', error);
+            console.error('Backend connection test error:', error);
             this.showMessage(`Backend test error: ${error.message}`, 'error');
         }
     }
@@ -849,47 +742,37 @@ class MiraDesktop {
      */
     async processAndSendOptimizedAudio(audioFloat32Array) {
         try {
-            console.log('🔧 Starting audio optimization pipeline...');
-            
             // Step 1: Analyze audio quality
             const audioAnalysis = this.analyzeAudioQuality(audioFloat32Array);
-            console.log(`📊 Audio analysis: SNR=${audioAnalysis.snr.toFixed(2)}dB, RMS=${audioAnalysis.rms.toFixed(4)}, Energy=${audioAnalysis.energy.toFixed(4)}`);
             
             // Step 2: Apply noise reduction if enabled
             let processedAudio = audioFloat32Array;
             if (this.audioOptimization.enableAdvancedNoiseReduction) {
                 processedAudio = this.applyNoiseReduction(processedAudio, audioAnalysis);
-                console.log('✅ Applied advanced noise reduction');
             }
             
             // Step 3: Apply dynamic gain control
             if (this.audioOptimization.enableDynamicGainControl) {
                 processedAudio = this.applyDynamicGainControl(processedAudio, audioAnalysis);
-                console.log('✅ Applied dynamic gain control');
             }
             
             // Step 4: Apply spectral gating for further noise reduction
             if (this.audioOptimization.enableSpectralGating) {
                 processedAudio = this.applySpectralGating(processedAudio, audioAnalysis);
-                console.log('✅ Applied spectral gating');
             }
             
             // Step 5: Final quality check
             const finalAnalysis = this.analyzeAudioQuality(processedAudio);
-            const qualityImprovement = finalAnalysis.snr - audioAnalysis.snr;
-            console.log(`🎯 Quality improvement: +${qualityImprovement.toFixed(2)}dB SNR`);
             
             // Step 6: Only send if audio quality is sufficient
             if (finalAnalysis.snr > this.audioOptimization.signalThreshold) {
                 await this.sendVADAudioToBackend(processedAudio);
-                console.log('✅ High-quality audio sent to backend');
             } else {
-                console.warn(`⚠️ Audio quality insufficient (SNR: ${finalAnalysis.snr.toFixed(2)}dB < ${this.audioOptimization.signalThreshold}dB), skipping`);
                 this.updateVADStatus('waiting');
             }
             
         } catch (error) {
-            console.error('❌ Error in audio optimization pipeline:', error);
+            console.error('Error in audio optimization pipeline:', error);
             // Fallback to original audio if processing fails
             await this.sendVADAudioToBackend(audioFloat32Array);
         }
@@ -978,8 +861,6 @@ class MiraDesktop {
         const targetRMS = 0.15; // Optimal level for transcription
         const gainFactor = Math.min(3.0, targetRMS / Math.max(analysis.rms, 0.001));
         
-        console.log(`🔊 Applying gain: ${gainFactor.toFixed(2)}x (RMS: ${analysis.rms.toFixed(4)} → ${targetRMS})`);
-        
         const result = new Float32Array(audioFloat32Array.length);
         for (let i = 0; i < audioFloat32Array.length; i++) {
             result[i] = Math.max(-1, Math.min(1, audioFloat32Array[i] * gainFactor));
@@ -1029,22 +910,6 @@ class MiraDesktop {
 
         this.isProcessingAudio = true;
 
-        if (this.debugMode) {
-            console.log('🔍 DEBUG: Enhanced audio sample stats:');
-            console.log('- Sample rate: 16000 Hz');
-            console.log('- Duration:', (audioFloat32Array.length / 16000).toFixed(3), 'seconds');
-            console.log('- Min sample:', Math.min(...audioFloat32Array).toFixed(4));
-            console.log('- Max sample:', Math.max(...audioFloat32Array).toFixed(4));
-            console.log('- RMS:', Math.sqrt(audioFloat32Array.reduce((sum, x) => sum + x * x, 0) / audioFloat32Array.length).toFixed(4));
-            
-            // Show optimization settings
-            console.log('🎛️ Audio optimization settings:');
-            console.log(`- Advanced noise reduction: ${this.audioOptimization.enableAdvancedNoiseReduction}`);
-            console.log(`- Dynamic gain control: ${this.audioOptimization.enableDynamicGainControl}`);
-            console.log(`- Spectral gating: ${this.audioOptimization.enableSpectralGating}`);
-            console.log(`- Signal threshold: ${this.audioOptimization.signalThreshold}dB`);
-        }
-
         try {
             if (!(audioFloat32Array instanceof Float32Array)) {
                 console.error('Invalid audio data type:', typeof audioFloat32Array);
@@ -1069,8 +934,6 @@ class MiraDesktop {
             const validSampleRatio = validSamples / audioFloat32Array.length;
             if (validSampleRatio < 0.001) {
                 console.warn('Audio appears to be mostly silence, validSamples:', validSamples, 'of', audioFloat32Array.length);
-            } else {
-                console.log(`Audio validation: ${validSamples}/${audioFloat32Array.length} non-silent samples (${(validSampleRatio * 100).toFixed(1)}%)`);
             }
 
             // Convert to bytes for backend (little-endian)
@@ -1108,10 +971,6 @@ class MiraDesktop {
 
                 try {
                     const result = await response.json();
-                    console.log('VAD audio processed successfully:', result);
-                    if (this.debugMode) {
-                        console.log('DEBUG: Backend response:', result);
-                    }
                 } catch (jsonError) {
                     console.warn('Response was OK but failed to parse JSON:', jsonError);
                 }
@@ -1177,19 +1036,6 @@ class MiraDesktop {
             }
         } else if (!this.isListening && status === 'stopped') {
             this.micStatusText.textContent = 'Click to start listening';
-        }
-
-        console.log(`🎤 VAD Status: ${statusMessages[status] || status}`);
-        
-        // Add visual indicators for debugging if in debug mode
-        if (this.debugMode) {
-            console.log(`🐛 Debug - VAD Status Details:`, {
-                status: status,
-                isListening: this.isListening,
-                isRecording: this.isRecording,
-                micVAD: !!this.micVAD,
-                message: statusMessages[status] || status
-            });
         }
     }
 
@@ -1287,12 +1133,10 @@ class MiraDesktop {
     startTranscriptionPolling() {
         this.stopTranscriptionPolling();
 
-        console.log('Starting transcription polling...');
         this.transcriptionInterval = setInterval(async () => {
             if (this.isListening && this.isConnected) {
                 // await this.fetchLatestInteractions();
             } else {
-                console.log('Stopping polling - not listening or not connected');
                 this.stopTranscriptionPolling();
             }
         }, 1000);
@@ -1387,7 +1231,6 @@ class MiraDesktop {
 
     stopTranscriptionPolling() {
         if (this.transcriptionInterval) {
-            console.log('Stopping transcription polling...');
             clearInterval(this.transcriptionInterval);
             this.transcriptionInterval = null;
         }
@@ -1541,12 +1384,9 @@ class MiraDesktop {
     }
 
     async cleanup() {
-        console.log('🧹 Cleaning up Mira Desktop App...');
-
         try {
             // Stop recording first
             if (this.isRecording && this.micVAD) {
-                console.log('🛑 Stopping recording during cleanup...');
                 await this.stopAudioCapture();
             }
 
@@ -1554,27 +1394,23 @@ class MiraDesktop {
             if (this.connectionCheckInterval) {
                 clearInterval(this.connectionCheckInterval);
                 this.connectionCheckInterval = null;
-                console.log('✅ Connection check interval cleared');
             }
 
             if (this.transcriptionInterval) {
                 clearInterval(this.transcriptionInterval);
                 this.transcriptionInterval = null;
-                console.log('✅ Transcription polling interval cleared');
             }
 
             // Stop listening service and deregister from backend
             if (this.isRegistered) {
                 try {
-                    console.log('🌐 Deregistering from backend during cleanup...');
                     await this.deregisterClient();
                     
                     if (this.isListening) {
-                        console.log('🛑 Stopping listening service during cleanup...');
                         await this.stopListening();
                     }
                 } catch (error) {
-                    console.error('❌ Error during cleanup deregistration:', error);
+                    console.error('Error during cleanup deregistration:', error);
                 }
             }
 
@@ -1584,10 +1420,8 @@ class MiraDesktop {
             this.isToggling = false;
             this.isProcessingAudio = false;
             
-            console.log('✅ Mira Desktop App cleanup completed');
-            
         } catch (error) {
-            console.error('❌ Error during cleanup:', error);
+            console.error('Error during cleanup:', error);
         }
     }
 }
@@ -1654,15 +1488,14 @@ document.addEventListener('keydown', (e) => {
     if (e.ctrlKey && e.shiftKey && e.code === 'KeyA') {
         e.preventDefault();
         if (window.miraApp) {
-            console.log('🎛️ === AUDIO OPTIMIZATION CONTROLS ===');
+            console.log('=== AUDIO OPTIMIZATION CONTROLS ===');
             console.log('Available commands:');
             console.log('- window.miraApp.showAudioStats() - Show detailed audio statistics');
             console.log('- window.miraApp.toggleAudioOptimization("enableAdvancedNoiseReduction")');
             console.log('- window.miraApp.toggleAudioOptimization("enableDynamicGainControl")');
             console.log('- window.miraApp.toggleAudioOptimization("enableSpectralGating")');
-            console.log('- window.miraApp.toggleAudioOptimization("adaptiveThresholds")');
             console.log('- window.miraApp.debugMode = true/false - Toggle debug mode');
-            console.log('🎹 Keyboard shortcuts:');
+            console.log('Keyboard shortcuts:');
             console.log('- Ctrl+Shift+D: Show audio stats');
             console.log('- Ctrl+Shift+M: Toggle debug mode');
             console.log('- Ctrl+Shift+T: Test backend connection');
