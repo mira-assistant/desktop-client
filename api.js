@@ -20,7 +20,7 @@ export class ApiService extends EventTarget {
         this.recentInteractionIds = new Set();
         this.healthCheckInterval = null;
         this.serviceEnabled = null; // Track service enabled state
-        
+
         /** Start automatic health checking */
         this.startHealthChecking();
     }
@@ -64,9 +64,9 @@ export class ApiService extends EventTarget {
             try {
                 const tempBaseUrl = this.baseUrl;
                 this.baseUrl = url;
-                
+
                 const healthData = await this.healthCheck();
-                
+
                 if (healthData) {
                     this.baseUrl = url;
                     const wasConnected = this.isConnected;
@@ -123,7 +123,7 @@ export class ApiService extends EventTarget {
      */
     updateRecentInteractions(interactions) {
         const newIds = new Set(interactions);
-        const hasChanges = newIds.size !== this.recentInteractionIds.size || 
+        const hasChanges = newIds.size !== this.recentInteractionIds.size ||
                           [...newIds].some(id => !this.recentInteractionIds.has(id));
 
         if (hasChanges) {
@@ -149,7 +149,7 @@ export class ApiService extends EventTarget {
 
         try {
             const url = `${this.baseUrl}${endpoint}`;
-            
+
             /** Log attempted URL if in debug mode */
             if (typeof window !== 'undefined' && window.miraApp && window.miraApp.debugMode) {
                 console.log(`[API DEBUG] Attempting request to: ${url}`, {
@@ -158,7 +158,7 @@ export class ApiService extends EventTarget {
                     baseUrl: this.baseUrl
                 });
             }
-            
+
             const response = await fetch(url, {
                 ...options,
                 signal: controller.signal,
@@ -182,11 +182,11 @@ export class ApiService extends EventTarget {
 
         } catch (error) {
             clearTimeout(timeoutId);
-            
+
             if (error.name === 'AbortError') {
                 return ApiResponse.error(ERROR_MESSAGES.NETWORK.TIMEOUT, 408);
             }
-            
+
             return ApiResponse.error(
                 error.message || ERROR_MESSAGES.NETWORK.CONNECTION_FAILED,
                 0
@@ -219,7 +219,7 @@ export class ApiService extends EventTarget {
             .replace(/[^a-zA-Z0-9\-_]/g, '-')  // Replace special chars with dashes
             .replace(/-+/g, '-')                // Replace multiple dashes with single dash
             .replace(/^-|-$/g, '');             // Remove leading/trailing dashes
-        
+
         /** No change needed */
         if (sanitizedClientId === oldClientId) {
             return true;
@@ -280,7 +280,7 @@ export class ApiService extends EventTarget {
      */
     async deregisterClient() {
         const endpoint = `${API_ENDPOINTS.CLIENT_DEREGISTER}/${encodeURIComponent(this.clientId)}`;
-        const response = await this.makeRequest(endpoint, { method: 'POST' });
+        const response = await this.makeRequest(endpoint, { method: 'DELETE' });
         if (response.success) {
             this.isRegistered = false;
             return true;
@@ -294,7 +294,7 @@ export class ApiService extends EventTarget {
      */
     async enableService() {
         const response = await this.makeRequest(API_ENDPOINTS.SERVICE_ENABLE, {
-            method: 'POST',
+            method: 'PATCH',
             body: JSON.stringify({ client_id: this.clientId })
         });
         return response.success;
@@ -309,7 +309,7 @@ export class ApiService extends EventTarget {
     async disableService(maxRetries = API_CONFIG.RETRY_CONFIG.MAX_RETRIES, timeout = API_CONFIG.TIMEOUTS.BACKEND_STOP_REQUEST) {
         for (let attempt = 1; attempt <= maxRetries; attempt++) {
             const response = await this.makeRequest(API_ENDPOINTS.SERVICE_DISABLE, {
-                method: 'POST',
+                method: 'PATCH',
                 body: JSON.stringify({ client_id: this.clientId })
             }, timeout);
 
@@ -323,7 +323,7 @@ export class ApiService extends EventTarget {
                 await new Promise(resolve => setTimeout(resolve, delay));
             }
         }
-        
+
         return false;
     }
 
@@ -356,7 +356,7 @@ export class ApiService extends EventTarget {
     async getInteraction(interactionId) {
         const endpoint = `${API_ENDPOINTS.INTERACTIONS}/${interactionId}`;
         const response = await this.makeRequest(endpoint, { method: 'GET' });
-        
+
         return response.success && response.data ? Interaction.fromApiResponse(response.data) : null;
     }
 
@@ -369,11 +369,11 @@ export class ApiService extends EventTarget {
         const queryParams = new URLSearchParams(filters);
         const endpoint = `${API_ENDPOINTS.INTERACTIONS}?${queryParams}`;
         const response = await this.makeRequest(endpoint, { method: 'GET' });
-        
+
         if (response.success && response.data && Array.isArray(response.data)) {
             return response.data.map(item => Interaction.fromApiResponse(item));
         }
-        
+
         return [];
     }
 
@@ -405,7 +405,7 @@ export class ApiService extends EventTarget {
     async getPerson(personId) {
         const endpoint = `${API_ENDPOINTS.SPEAKERS}/${personId}`;
         const response = await this.makeRequest(endpoint, { method: 'GET' });
-        
+
         return response.success && response.data ? Person.fromApiResponse(response.data) : null;
     }
 
@@ -415,11 +415,11 @@ export class ApiService extends EventTarget {
      */
     async getPersons() {
         const response = await this.makeRequest(API_ENDPOINTS.SPEAKERS, { method: 'GET' });
-        
+
         if (response.success && response.data && Array.isArray(response.data)) {
             return response.data.map(item => Person.fromApiResponse(item));
         }
-        
+
         return [];
     }
 
@@ -431,7 +431,7 @@ export class ApiService extends EventTarget {
     async getConversation(conversationId) {
         const endpoint = `${API_ENDPOINTS.CONVERSATIONS}/${conversationId}`;
         const response = await this.makeRequest(endpoint, { method: 'GET' });
-        
+
         return response.success && response.data ? Conversation.fromApiResponse(response.data) : null;
     }
 
@@ -441,11 +441,11 @@ export class ApiService extends EventTarget {
      */
     async getConversations() {
         const response = await this.makeRequest(API_ENDPOINTS.CONVERSATIONS, { method: 'GET' });
-        
+
         if (response.success && response.data && Array.isArray(response.data)) {
             return response.data.map(item => Conversation.fromApiResponse(item));
         }
-        
+
         return [];
     }
 
@@ -457,7 +457,7 @@ export class ApiService extends EventTarget {
     async getAction(actionId) {
         const endpoint = `${API_ENDPOINTS.ACTIONS}/${actionId}`;
         const response = await this.makeRequest(endpoint, { method: 'GET' });
-        
+
         return response.success && response.data ? Action.fromApiResponse(response.data) : null;
     }
 
@@ -467,11 +467,11 @@ export class ApiService extends EventTarget {
      */
     async getActions() {
         const response = await this.makeRequest(API_ENDPOINTS.ACTIONS, { method: 'GET' });
-        
+
         if (response.success && response.data && Array.isArray(response.data)) {
             return response.data.map(item => Action.fromApiResponse(item));
         }
-        
+
         return [];
     }
 
@@ -486,7 +486,7 @@ export class ApiService extends EventTarget {
             method: 'PATCH',
             body: JSON.stringify({ status })
         });
-        
+
         return response.success && response.data ? Action.fromApiResponse(response.data) : null;
     }
 
