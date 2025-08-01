@@ -81,9 +81,9 @@ class MiraDesktop {
                 this.updateConnectionStatus(false);
                 this.showConnectionBanner();
                 
-                /** Stop listening if connection lost */
+                /** Connection lost - disable listening through unified state management */
                 if (this.isListening) {
-                    this.stopListening();
+                    this.manageListeningState(false);
                 }
             }
         });
@@ -92,6 +92,9 @@ class MiraDesktop {
         this.apiService.addEventListener('statusChange', (event) => {
             const { enabled } = event.detail;
             this.updateServerStatus({ enabled });
+            
+            /** Manage listening state based on service status */
+            this.manageListeningState(enabled);
         });
 
         /** Listen for interaction updates */
@@ -113,6 +116,48 @@ class MiraDesktop {
         this.retryButton = document.getElementById('retryButton');
         this.rippleEffect = document.getElementById('rippleEffect');
         this.clientNameInput = document.getElementById('clientNameInput');
+    }
+
+    /**
+     * Unified function to manage listening state based on service enabled status
+     * Handles enabling/disabling audio streams, MicVAD systems, and all listening components
+     * @param {boolean} enabled - Whether the service should be enabled
+     */
+    async manageListeningState(enabled) {
+        try {
+            if (enabled && !this.isListening) {
+                /** Enable listening: start audio capture and transcription */
+                await this.startAudioCapture();
+                this.isListening = true;
+                this.updateListeningUI(true);
+                this.startTranscriptionPolling();
+                this.log('info', SUCCESS_MESSAGES.AUDIO_START);
+                this.debugLog('audio', 'Listening enabled via state management', {
+                    serviceEnabled: true,
+                    vadInitialized: !!this.micVAD
+                });
+            } else if (!enabled && this.isListening) {
+                /** Disable listening: stop audio capture and cleanup */
+                await this.stopAudioCapture();
+                this.isListening = false;
+                this.updateListeningUI(false);
+                this.stopTranscriptionPolling();
+                this.log('info', 'Listening disabled via state management');
+                this.debugLog('audio', 'Listening disabled via state management', {
+                    serviceEnabled: false,
+                    vadDestroyed: !this.micVAD
+                });
+            }
+        } catch (error) {
+            this.log('error', 'Error in manageListeningState', error);
+            /** Ensure cleanup on error */
+            if (!enabled) {
+                await this.stopAudioCapture();
+                this.isListening = false;
+                this.updateListeningUI(false);
+                this.stopTranscriptionPolling();
+            }
+        }
     }
 
     setupEventListeners() {
@@ -307,9 +352,17 @@ class MiraDesktop {
             await new Promise(resolve => setTimeout(resolve, 50));
 
             if (this.isListening) {
-                await this.stopListening();
+                /** Send disable request to backend - state management will handle cleanup */
+                const success = await this.apiService.disableService();
+                if (!success) {
+                    throw new Error('Failed to send disable request to backend');
+                }
             } else {
-                await this.startListening();
+                /** Send enable request to backend - state management will handle audio start */
+                const success = await this.apiService.enableService();
+                if (!success) {
+                    throw new Error('Failed to send enable request to backend');
+                }
             }
             
         } catch (error) {
@@ -351,65 +404,6 @@ class MiraDesktop {
             if (!this.isListening && this.micStatusText.textContent.includes('...')) {
                 this.micStatusText.textContent = originalButtonText;
             }
-        }
-    }
-
-    /**
-     * Start listening service with backend enable and audio capture
-     * Uses ApiService for proper error handling and response management
-     */
-    async startListening() {
-        try {
-            const success = await this.apiService.enableService();
-
-            if (success) {
-                await this.startAudioCapture();
-                this.isListening = true;
-                this.updateListeningUI(true);
-                this.startTranscriptionPolling();
-                this.log('info', SUCCESS_MESSAGES.AUDIO_START);
-                this.debugLog('audio', 'Listening started successfully', {
-                    serviceEnabled: true,
-                    vadInitialized: !!this.micVAD
-                });
-            } else {
-                this.log('error', 'Failed to enable backend service');
-                throw new Error('Failed to enable listening');
-            }
-        } catch (error) {
-            this.log('error', 'Error starting listening', error);
-            await this.stopAudioCapture();
-            this.isListening = false;
-            this.updateListeningUI(false);
-            throw error;
-        }
-    }
-
-    /**
-     * Stop listening service by sending disable request to backend
-     * The actual frontend disabling will be handled by health checks detecting status change
-     */
-    async stopListening() {
-        try {
-            /** Only send disable request to backend */
-            const success = await this.apiService.disableService();
-            
-            if (success) {
-                this.log('info', 'Disable request sent to backend successfully');
-                this.debugLog('audio', 'Backend disable request completed', {
-                    backendDisabled: true
-                });
-            } else {
-                /** Show user-friendly error message */
-                this.showMessage(
-                    'Failed to send disable request to backend. Please check your connection.', 
-                    'warning'
-                );
-                this.log('warn', 'Backend disable request failed');
-            }
-        } catch (error) {
-            this.log('error', 'Error sending disable request to backend', error);
-            this.showMessage('Error communicating with backend', 'error');
         }
     }
 
@@ -723,7 +717,7 @@ class MiraDesktop {
         /** Future implementation could: */
         /** 1. Use a lightweight local speech recognition model */
         /** 2. Check for specific wake words like "Mira cancel", "stop", etc. */
-        /** 3. If detected, immediately call this.stopListening() */
+        /** 3. If detected, immediately call this.apiService.disableService() */
         /** 4. Return true/false to indicate if command was found */
         
         return false;
@@ -1207,61 +1201,14 @@ Debug Shortcuts:
     }
 
     /**
-     * Update server status and handle external service state changes
+     * Update server status display
+     * Note: Listening state management is now handled by manageListeningState through statusChange events
      * @param {Object} status - Status object with enabled property
      */
     async updateServerStatus(status) {
-        if (status.enabled && !this.isListening) {
-            await this.startListening();
-        } else if (!status.enabled && this.isListening) {
-            /** Service was disabled externally - run disable functions without backend call */
-            this.log('info', 'Service disabled externally, running local cleanup');
-            await this.handleExternalServiceDisable();
-        }
-    }
-
-    /**
-     * Handle external service disable by running all normal disable functions
-     * without attempting to call the backend disable endpoint
-     */
-    async handleExternalServiceDisable() {
-        try {
-            /** Stop audio capture to ensure recording stops immediately */
-            await this.stopAudioCapture();
-
-            /** Update states to stopped (backend is already disabled) */
-            this.isListening = false;
-            this.updateListeningUI(false);
-            this.stopTranscriptionPolling();
-            
-            this.log('info', 'External service disable cleanup completed');
-            this.debugLog('audio', 'Listening stopped due to external service disable', {
-                externalDisable: true,
-                vadDestroyed: !this.micVAD
-            });
-            
-            /** Show user-friendly message */
-            this.showMessage('Recording stopped - service was disabled remotely', 'warning');
-            
-        } catch (error) {
-            this.log('error', 'Error during external disable cleanup', error);
-            
-            /** Ensure cleanup happens even if there are errors */
-            try {
-                /** Force stop audio capture if not already done */
-                await this.stopAudioCapture();
-                
-                /** Update states to stopped regardless */
-                this.isListening = false;
-                this.updateListeningUI(false);
-                this.stopTranscriptionPolling();
-            } catch (cleanupError) {
-                this.log('error', 'Error during forced external disable cleanup', cleanupError);
-            }
-            
-            /** Show user-friendly error message */
-            this.showMessage('Error during remote disable cleanup: ' + error.message, 'error');
-        }
+        /** The manageListeningState function now handles actual listening state changes */
+        /** This function just updates the UI display if needed */
+        this.log('info', `Server status updated: ${status.enabled ? 'enabled' : 'disabled'}`);
     }
 
     updateListeningUI(listening) {
@@ -1562,7 +1509,7 @@ Debug Shortcuts:
                     await this.deregisterClient();
                     
                     if (this.isListening) {
-                        await this.stopListening();
+                        await this.apiService.disableService();
                     }
                 } catch (error) {
                     this.log('error', 'Error during cleanup deregistration', error);
