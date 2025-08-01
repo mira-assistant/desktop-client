@@ -118,6 +118,32 @@ npm run start-dev
 
 This runs the application with development tools enabled.
 
+### Testing
+
+The application includes a comprehensive test suite with 67 tests across 5 test files:
+
+```bash
+# Run all tests
+npm test
+
+# Run tests with coverage report
+npm run test:coverage
+
+# Run tests in watch mode for development
+npm run test:watch
+```
+
+**Note**: Tests are designed to work independently of the backend service. All HTTP requests are mocked, so tests pass even when the backend is unavailable or in development.
+
+Test coverage includes:
+- Configuration constants validation
+- Data model classes (Person, Interaction, Conversation, Action)
+- API service functionality with mocked HTTP requests
+- Integration testing of component interactions
+- Utility functions and core logic
+
+For detailed test documentation, see `tests/README.md`.
+
 ## Architecture
 
 The desktop application is built using:

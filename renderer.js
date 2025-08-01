@@ -1117,14 +1117,7 @@ Debug Shortcuts:
                 this.audioProcessingStats.failedRequests++;
                 const errorMessage = 'Audio processing failed';
                 this.log('error', errorMessage);
-
-                if (response.status === 404) {
-                    this.showMessage('Backend endpoint not found. Please check if the backend is running correctly.', 'error');
-                } else if (response.status >= 500) {
-                    this.showMessage('Backend server error. Please try again.', 'error');
-                } else {
-                    this.showMessage(`Failed to process audio: ${response.error}`, 'error');
-                }
+                this.showMessage('Failed to process audio. Please try again.', 'error');
             }
 
         } catch (error) {

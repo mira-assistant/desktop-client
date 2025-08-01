@@ -44,7 +44,7 @@ module.exports = [
     files: ["constants.js", "models.js", "api.js", "renderer.js"],
     languageOptions: {
       ecmaVersion: 2022,
-      sourceType: "module",
+      sourceType: "module", // Back to module since these are ES modules
       globals: {
         ...globals.browser,
         vad: "readonly",
@@ -69,7 +69,40 @@ module.exports = [
         Error: "readonly",
         Promise: "readonly",
         URL: "readonly",
-        URLSearchParams: "readonly"
+        URLSearchParams: "readonly",
+        EventTarget: "readonly",
+        CustomEvent: "readonly"
+      }
+    },
+    rules: {
+      "no-unused-vars": "warn",
+      "no-console": "off"
+    }
+  },
+  {
+    // Configuration for Jest test files
+    files: ["tests/**/*.js", "**/*.test.js", "**/*.spec.js"],
+    languageOptions: {
+      ecmaVersion: 2022,
+      sourceType: "module", // Test files also use ES modules
+      globals: {
+        ...globals.node,
+        ...globals.jest,
+        setTimeout: "readonly",
+        clearTimeout: "readonly",
+        setInterval: "readonly",
+        clearInterval: "readonly",
+        performance: "readonly",
+        Date: "readonly",
+        Error: "readonly",
+        Promise: "readonly",
+        Map: "readonly",
+        Set: "readonly",
+        Blob: "readonly",
+        FormData: "readonly",
+        ArrayBuffer: "readonly",
+        EventTarget: "readonly",
+        CustomEvent: "readonly"
       }
     },
     rules: {

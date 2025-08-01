@@ -95,7 +95,7 @@ export class ApiService extends EventTarget {
                 } else {
                     this.baseUrl = tempBaseUrl;
                 }
-            } catch (error) {
+            } catch {
                 /** Continue to next URL */
             }
         }
