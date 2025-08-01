@@ -58,6 +58,9 @@ class MiraDesktop {
         this.initializeElements();
         this.setupEventListeners();
         this.setupApiEventListeners();
+        
+        /** Initialize connection banner state - start as disconnected */
+        this.showConnectionBanner();
     }
 
     /**
@@ -1284,11 +1287,21 @@ class MiraDesktop {
     }
 
     showConnectionBanner() {
-        this.connectionBanner.style.display = 'block';
+        if (this.connectionBanner) {
+            this.connectionBanner.style.display = 'block';
+            this.debugLog('ui', 'Connection banner shown');
+        } else {
+            console.error('Connection banner element not found');
+        }
     }
 
     hideConnectionBanner() {
-        this.connectionBanner.style.display = 'none';
+        if (this.connectionBanner) {
+            this.connectionBanner.style.display = 'none';
+            this.debugLog('ui', 'Connection banner hidden');
+        } else {
+            console.error('Connection banner element not found');
+        }
     }
 
     showMessage(message, type = 'info') {
