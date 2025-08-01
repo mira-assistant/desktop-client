@@ -239,7 +239,7 @@ export class ApiService extends EventTarget {
                 const registered = await this.registerClient();
                 if (registered) {
                     this.dispatchEvent(new CustomEvent('clientIdChanged', {
-                        detail: { oldClientId, newClientId: trimmedClientId }
+                        detail: { oldClientId, newClientId: sanitizedClientId }
                     }));
                     return true;
                 }
