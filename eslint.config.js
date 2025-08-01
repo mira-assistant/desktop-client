@@ -1,16 +1,16 @@
 // ESLint configuration for Mira Desktop (Electron/Node.js)
 // Compatible with ESLint v9+. Update plugins/rules as needed for your code style.
 
-import js from "@eslint/js";
-import node from "eslint-plugin-n";
-import globals from "globals";
+const js = require("@eslint/js");
+const node = require("eslint-plugin-n");
+const globals = require("globals");
 
-export default [
+module.exports = [
   js.configs.recommended,
   {
     languageOptions: {
       ecmaVersion: 2022,
-      sourceType: "module",
+      sourceType: "script",
       globals: {
         ...globals.node,
         ...globals.browser
