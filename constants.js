@@ -2,7 +2,10 @@
  * Constants for Mira Desktop Application
  */
 
-// API Configuration
+/**
+ * API Configuration settings for backend communication
+ * @type {Object}
+ */
 export const API_CONFIG = {
     BASE_URLS: new Map([
         ["localhost", 'http://localhost:8000'],
@@ -10,33 +13,48 @@ export const API_CONFIG = {
     ]),
     CLIENT_ID: 'Mira Desktop App',
     TIMEOUTS: {
-        DEFAULT_REQUEST: 10000, // 10 seconds
-        VAD_LIBRARY_LOAD: 15000, // 15 seconds
-        BACKEND_STOP_REQUEST: 10000, // 10 seconds
+        /** Default request timeout in milliseconds */
+        DEFAULT_REQUEST: 10000,
+        /** VAD library loading timeout in milliseconds */
+        VAD_LIBRARY_LOAD: 15000,
+        /** Backend stop request timeout in milliseconds */
+        BACKEND_STOP_REQUEST: 10000,
     },
     RETRY_CONFIG: {
         MAX_RETRIES: 2,
-        BACKOFF_DELAY: 1000, // 1 second
+        /** Backoff delay in milliseconds */
+        BACKOFF_DELAY: 1000,
     }
 };
 
-// Audio Configuration
+/**
+ * Audio Configuration settings for voice processing and optimization
+ * @type {Object}
+ */
 export const AUDIO_CONFIG = {
     VAD_THRESHOLDS: {
-        POSITIVE_SPEECH: 0.35, // Increased for better noise rejection
-        NEGATIVE_SPEECH: 0.15, // Balanced for clean cutoff
-        SILENCE_MS: 420, // More responsive detection
+        /** Increased for better noise rejection */
+        POSITIVE_SPEECH: 0.35,
+        /** Balanced for clean cutoff */
+        NEGATIVE_SPEECH: 0.15,
+        /** More responsive detection in milliseconds */
+        SILENCE_MS: 420,
     },
     OPTIMIZATION: {
-        NOISE_FLOOR: -40, // dB
-        SIGNAL_THRESHOLD: -20, // dB
-        TARGET_RMS: 0.15, // Optimal for transcription
-        MIN_SNR_DB: -20, // Minimum SNR threshold
+        /** Noise floor threshold in dB */
+        NOISE_FLOOR: -40,
+        /** Signal threshold in dB */
+        SIGNAL_THRESHOLD: -20,
+        /** Optimal RMS for transcription */
+        TARGET_RMS: 0.15,
+        /** Minimum SNR threshold in dB */
+        MIN_SNR_DB: -20,
     },
     CONSTRAINTS: {
         SAMPLE_RATE: 16000,
         CHANNELS: 1,
-        LATENCY: 0.01, // Low latency for real-time processing
+        /** Low latency for real-time processing */
+        LATENCY: 0.01,
         ECHO_CANCELLATION: true,
         NOISE_SUPPRESSION: true,
         AUTO_GAIN_CONTROL: true,
@@ -48,14 +66,18 @@ export const AUDIO_CONFIG = {
     }
 };
 
-// UI Configuration
+/**
+ * UI Configuration settings for visual elements and behaviors
+ * @type {Object}
+ */
 export const UI_CONFIG = {
     OPACITY: {
         DISABLED: '0.7',
         ENABLED: '1.0',
     },
     MESSAGES: {
-        FADE_DURATION: 3000, // 3 seconds
+        /** Fade duration in milliseconds */
+        FADE_DURATION: 3000,
     },
     COLORS: {
         SUCCESS: '#28a745',
@@ -65,7 +87,10 @@ export const UI_CONFIG = {
     }
 };
 
-// Debug Configuration
+/**
+ * Debug Configuration settings for logging and diagnostics
+ * @type {Object}
+ */
 export const DEBUG_CONFIG = {
     LOG_LEVELS: {
         ERROR: 0,
@@ -74,12 +99,17 @@ export const DEBUG_CONFIG = {
         DEBUG: 3,
     },
     PERFORMANCE: {
-        AUDIO_STATS_INTERVAL: 5000, // 5 seconds
-        MEMORY_CHECK_INTERVAL: 10000, // 10 seconds
+        /** Audio stats interval in milliseconds */
+        AUDIO_STATS_INTERVAL: 5000,
+        /** Memory check interval in milliseconds */
+        MEMORY_CHECK_INTERVAL: 10000,
     }
 };
 
-// API Endpoints
+/**
+ * API Endpoints for backend communication
+ * @type {Object}
+ */
 export const API_ENDPOINTS = {
     HEALTH_CHECK: '/',
     CLIENT_REGISTER: '/service/client/register',
@@ -91,7 +121,10 @@ export const API_ENDPOINTS = {
     SPEAKERS: '/speakers',
 };
 
-// Error Messages
+/**
+ * Error Messages for user feedback and debugging
+ * @type {Object}
+ */
 export const ERROR_MESSAGES = {
     NETWORK: {
         CONNECTION_FAILED: 'Failed to connect to server',
@@ -111,7 +144,10 @@ export const ERROR_MESSAGES = {
     }
 };
 
-// Success Messages
+/**
+ * Success Messages for user feedback
+ * @type {Object}
+ */
 export const SUCCESS_MESSAGES = {
     CONNECTION: 'Successfully connected to server',
     REGISTRATION: 'Successfully registered with backend',

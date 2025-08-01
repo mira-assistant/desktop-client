@@ -117,7 +117,7 @@ export class ApiService {
             }
 
             if (attempt < maxRetries) {
-                // Exponential backoff delay
+                /** Exponential backoff delay */
                 const delay = API_CONFIG.RETRY_CONFIG.BACKOFF_DELAY * Math.pow(2, attempt - 1);
                 await new Promise(resolve => setTimeout(resolve, delay));
             }

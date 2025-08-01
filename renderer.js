@@ -1,11 +1,16 @@
 import { API_CONFIG, AUDIO_CONFIG, UI_CONFIG, DEBUG_CONFIG, ERROR_MESSAGES, SUCCESS_MESSAGES } from './constants.js';
 import { ApiService } from './api.js';
 
+/**
+ * MiraDesktop - Main application class for the Mira Desktop Client
+ * Handles audio recording, transcription, and backend communication
+ */
 class MiraDesktop {
+    /**
+     * Initialize the MiraDesktop application
+     */
     constructor() {
-        this.baseUrls = API_CONFIG.BASE_URLS;
         this.baseUrl = null;
-        this.clientId = API_CONFIG.CLIENT_ID;
         this.apiService = null;
         
         this.isConnected = false;
@@ -22,7 +27,7 @@ class MiraDesktop {
         this.speakerIndexMap = new Map();
         this.nextSpeakerIndex = 0;
 
-        // Audio capture properties - VAD-based
+        /** Audio capture properties for VAD-based recording */
         this.micVAD = null;
         this.isRecording = false;
         this.audioProcessingStats = {
@@ -33,7 +38,7 @@ class MiraDesktop {
             averageAudioDuration: 0
         };
 
-        // Enhanced audio optimization properties from constants
+        /** Enhanced audio optimization properties from constants */
         this.audioOptimization = {
             enableAdvancedNoiseReduction: true,
             enableDynamicGainControl: true,
@@ -45,7 +50,7 @@ class MiraDesktop {
             lastNoiseAnalysis: 0
         };
 
-        // Debug mode configuration
+        /** Debug mode configuration */
         this.debugMode = false;
         this.debugLevel = DEBUG_CONFIG.LOG_LEVELS.INFO;
 
@@ -91,7 +96,7 @@ class MiraDesktop {
         const currentLevel = this.debugMode ? DEBUG_CONFIG.LOG_LEVELS.DEBUG : this.debugLevel;
         
         if (levels[level.toUpperCase()] > currentLevel) {
-            return; // Skip logging if level is below current threshold
+            return;
         }
 
         const timestamp = new Date().toISOString();
@@ -143,7 +148,7 @@ class MiraDesktop {
      * Attempts to connect to configured servers and initializes API service
      */
     async checkConnection() {
-        let urls = Object.fromEntries(this.baseUrls);
+        let urls = Object.fromEntries(API_CONFIG.BASE_URLS);
 
         if (this.baseUrl) {
             urls = { "cachedUrl": this.baseUrl, ...urls };
@@ -153,13 +158,14 @@ class MiraDesktop {
 
         for (const [hostName, url] of Object.entries(urls)) {
             try {
-                // Create temporary API service for health check
+                /** Create temporary API service for health check */
                 const tempApiService = new ApiService(url);
                 const response = await tempApiService.healthCheck();
                 
                 if (response.success) {
                     this.baseUrl = url;
-                    this.apiService = tempApiService; // Set the working API service
+                    /** Set the working API service */
+                    this.apiService = tempApiService;
                     this.updateConnectionStatus(true);
                     this.hideConnectionBanner();
                     this.isConnected = true;
@@ -208,7 +214,7 @@ class MiraDesktop {
             if (response.success) {
                 this.isRegistered = true;
                 this.log('info', SUCCESS_MESSAGES.REGISTRATION);
-                this.debugLog('api', 'Client registration successful', { clientId: this.clientId });
+                this.debugLog('api', 'Client registration successful', { clientId: API_CONFIG.CLIENT_ID });
             } else {
                 this.log('error', `Failed to register client: ${response.error}`, { status: response.status });
             }
@@ -234,7 +240,7 @@ class MiraDesktop {
             if (response.success) {
                 this.isRegistered = false;
                 this.log('info', 'Client deregistered successfully');
-                this.debugLog('api', 'Client deregistration successful', { clientId: this.clientId });
+                this.debugLog('api', 'Client deregistration successful', { clientId: API_CONFIG.CLIENT_ID });
             } else {
                 this.log('error', `Failed to deregister client: ${response.error}`, { status: response.status });
             }
@@ -257,11 +263,11 @@ class MiraDesktop {
         const originalButtonText = this.micStatusText.textContent;
 
         try {
-            // Provide immediate UI feedback
+            /** Provide immediate UI feedback */
             this.micButton.style.opacity = UI_CONFIG.OPACITY.DISABLED;
             this.micStatusText.textContent = this.isListening ? 'Stopping...' : 'Starting...';
 
-            // Small delay to ensure UI feedback is visible
+            /** Small delay to ensure UI feedback is visible */
             await new Promise(resolve => setTimeout(resolve, 50));
 
             if (this.isListening) {
@@ -273,7 +279,7 @@ class MiraDesktop {
         } catch (error) {
             this.log('error', 'Error toggling listening', error);
 
-            // Determine user-friendly error message
+            /** Determine user-friendly error message */
             let errorMessage = 'Error: ' + error.message;
             if (error.message.includes('Permission denied') || error.message.includes('NotAllowedError')) {
                 errorMessage = ERROR_MESSAGES.AUDIO.PERMISSION_DENIED;
@@ -289,10 +295,10 @@ class MiraDesktop {
 
             this.showMessage(errorMessage, 'error');
             
-            // Ensure UI reflects actual state after error
+            /** Ensure UI reflects actual state after error */
             this.updateListeningUI(this.isListening);
             
-            // Log detailed error information for debugging
+            /** Log detailed error information for debugging */
             console.error('Toggle listening error details:', {
                 message: error.message,
                 isConnected: this.isConnected,
@@ -301,11 +307,11 @@ class MiraDesktop {
             });
             
         } finally {
-            // Always reset toggle state and UI
+            /** Always reset toggle state and UI */
             this.isToggling = false;
             this.micButton.style.opacity = UI_CONFIG.OPACITY.ENABLED;
 
-            // Restore button text if we're not listening and text shows loading state
+            /** Restore button text if we're not listening and text shows loading state */
             if (!this.isListening && this.micStatusText.textContent.includes('...')) {
                 this.micStatusText.textContent = originalButtonText;
             }
@@ -353,17 +359,17 @@ class MiraDesktop {
      */
     async stopListening() {
         try {
-            // First, stop audio capture to ensure recording stops immediately
+            /** First, stop audio capture to ensure recording stops immediately */
             await this.stopAudioCapture();
 
-            // Send disable request to backend using ApiService
+            /** Send disable request to backend using ApiService */
             let backendStopResult = null;
             if (this.apiService) {
                 backendStopResult = await this.apiService.disableService();
             }
             
             if (backendStopResult && backendStopResult.success) {
-                // Update states only after successful backend confirmation
+                /** Update states only after successful backend confirmation */
                 this.isListening = false;
                 this.updateListeningUI(false);
                 this.stopTranscriptionPolling();
@@ -373,12 +379,12 @@ class MiraDesktop {
                     vadDestroyed: !this.micVAD
                 });
             } else {
-                // Even if backend fails, ensure local state is consistent
+                /** Even if backend fails, ensure local state is consistent */
                 this.isListening = false;
                 this.updateListeningUI(false);
                 this.stopTranscriptionPolling();
                 
-                // Show user-friendly error message
+                /** Show user-friendly error message */
                 this.showMessage(
                     'Audio recording stopped, but backend communication failed. Please check your connection.', 
                     'warning'
@@ -388,12 +394,12 @@ class MiraDesktop {
         } catch (error) {
             this.log('error', 'Error stopping listening', error);
             
-            // Ensure cleanup happens even if there are errors
+            /** Ensure cleanup happens even if there are errors */
             try {
-                // Force stop audio capture if not already done
+                /** Force stop audio capture if not already done */
                 await this.stopAudioCapture();
                 
-                // Update states to stopped regardless of backend status
+                /** Update states to stopped regardless of backend status */
                 this.isListening = false;
                 this.updateListeningUI(false);
                 this.stopTranscriptionPolling();
@@ -401,10 +407,10 @@ class MiraDesktop {
                 this.log('error', 'Error during forced stop cleanup', cleanupError);
             }
             
-            // Show user-friendly error message
+            /** Show user-friendly error message */
             this.showMessage('Error stopping recording: ' + error.message, 'error');
             
-            // Don't rethrow - we want to ensure the UI is updated
+            /** Don't rethrow - we want to ensure the UI is updated */
         }
     }
 
@@ -448,24 +454,27 @@ class MiraDesktop {
             const { MicVAD } = vad;
             const sampleRate = 16000;
             const frameSamples = 1536;
-            const targetSilenceMs = 420; // Reduced for more responsive detection
+            /** Reduced for more responsive detection */
+            const targetSilenceMs = 420;
             const redemptionFrames = Math.max(1, Math.round((targetSilenceMs * sampleRate) / (frameSamples * 1000)));
 
             const vadInitPromise = MicVAD.new({
                 model: 'legacy',
 
-                // Optimized thresholds for better noise rejection
+                /** Optimized thresholds for better noise rejection */
                 positiveSpeechThreshold: AUDIO_CONFIG.VAD_THRESHOLDS.POSITIVE_SPEECH,
                 negativeSpeechThreshold: AUDIO_CONFIG.VAD_THRESHOLDS.NEGATIVE_SPEECH,
 
                 redemptionFrames: redemptionFrames,
 
-                // Audio quality settings optimized for transcription
+                /** Audio quality settings optimized for transcription */
                 frameSamples: frameSamples,
-                preSpeechPadFrames: 2, // Increased to capture speech onset
-                minSpeechFrames: 4, // Increased to avoid false positives
+                /** Increased to capture speech onset */
+                preSpeechPadFrames: 2,
+                /** Increased to avoid false positives */
+                minSpeechFrames: 4,
 
-                // Enhanced audio constraints for maximum quality
+                /** Enhanced audio constraints for maximum quality */
                 additionalAudioConstraints: {
                     sampleRate: AUDIO_CONFIG.CONSTRAINTS.SAMPLE_RATE,
                     echoCancellation: AUDIO_CONFIG.CONSTRAINTS.ECHO_CANCELLATION,
@@ -473,7 +482,7 @@ class MiraDesktop {
                     autoGainControl: AUDIO_CONFIG.CONSTRAINTS.AUTO_GAIN_CONTROL,
                     channelCount: AUDIO_CONFIG.CONSTRAINTS.CHANNELS,
                     
-                    // Advanced constraints for better audio quality
+                    /** Advanced constraints for better audio quality */
                     googEchoCancellation: true,
                     googAutoGainControl: true,
                     googNoiseSuppression: true,
@@ -490,7 +499,7 @@ class MiraDesktop {
                     try {
                         this.updateVADStatus('processing');
 
-                        // Validate and optimize audio data before sending
+                        /** Validate and optimize audio data before sending */
                         if (audio && audio.length > 0) {
                             this.processAndSendOptimizedAudio(audio);
                         } else {
@@ -507,7 +516,7 @@ class MiraDesktop {
                 },
 
                 onFrameProcessed: (probabilities) => {
-                    // Enhanced debug mode logging for frame processing
+                    /** Enhanced debug mode logging for frame processing */
                     if (this.debugMode) {
                         this.debugLog('vad', 'Frame processed', {
                             probabilities: probabilities,
@@ -570,7 +579,7 @@ class MiraDesktop {
         this.log('info', 'Starting audio capture stop process');
         
         try {
-            // Set recording state to false immediately to prevent new processing
+            /** Set recording state to false immediately to prevent new processing */
             this.isRecording = false;
             this.log('info', 'Recording state set to false');
 
@@ -582,35 +591,35 @@ class MiraDesktop {
                 });
                 
                 try {
-                    // Call destroy method on VAD
+                    /** Call destroy method on VAD */
                     await this.micVAD.destroy();
                     this.log('info', 'VAD.destroy() completed successfully');
                 } catch (vadError) {
                     this.log('error', 'Error calling VAD.destroy()', vadError);
-                    // Continue with cleanup even if destroy fails
+                    /** Continue with cleanup even if destroy fails */
                 }
 
-                // Additional cleanup: manually stop any remaining audio tracks
+                /** Additional cleanup: manually stop any remaining audio tracks */
                 await this.forceStopAllAudioTracks();
                 
-                // Clear the VAD reference
+                /** Clear the VAD reference */
                 this.micVAD = null;
                 this.log('info', 'VAD instance cleared');
             } else {
                 this.log('info', 'No VAD instance to destroy');
             }
 
-            // Verify that recording has actually stopped
+            /** Verify that recording has actually stopped */
             await this.verifyRecordingIsStopped();
             
-            // Update VAD status
+            /** Update VAD status */
             this.updateVADStatus('stopped');
             this.log('info', 'Audio capture stopped successfully');
             
         } catch (error) {
             this.log('error', 'Error stopping VAD audio capture', error);
             
-            // Force cleanup even if there are errors
+            /** Force cleanup even if there are errors */
             try {
                 await this.forceStopAllAudioTracks();
                 this.micVAD = null;
@@ -621,7 +630,7 @@ class MiraDesktop {
                 this.log('error', 'Error during forced cleanup', forceError);
             }
             
-            // Log detailed error information for debugging
+            /** Log detailed error information for debugging */
             this.debugLog('audio', 'Audio capture stop error details', {
                 message: error.message,
                 name: error.name,
@@ -630,7 +639,7 @@ class MiraDesktop {
                 micVAD: !!this.micVAD
             });
             
-            // Don't rethrow the error - we want to ensure cleanup happens
+            /** Don't rethrow the error - we want to ensure cleanup happens */
         }
     }
 
@@ -639,28 +648,28 @@ class MiraDesktop {
      */
     async forceStopAllAudioTracks() {
         try {
-            // Get all media devices
+            /** Get all media devices */
             const mediaDevices = navigator.mediaDevices;
             if (!mediaDevices || !mediaDevices.enumerateDevices) {
                 return;
             }
 
-            // Check if there are any active media streams and verify cleanup
+            /** Check if there are any active media streams and verify cleanup */
             
-            // Try to detect active streams by checking permissions
+            /** Try to detect active streams by checking permissions */
             try {
                 await navigator.permissions.query({ name: 'microphone' });
             } catch {
-                // Ignore permission check errors - this is just a verification step
+                /** Ignore permission check errors - this is just a verification step */
             }
 
-            // The VAD library should clean up its own streams, but let's add a verification step
-            // We'll try to create a new temporary stream to verify microphone access is properly released
+            /** The VAD library should clean up its own streams, but let's add a verification step */
+            /** We'll try to create a new temporary stream to verify microphone access is properly released */
             await this.verifyMicrophoneIsReleased();
             
         } catch (error) {
             console.error('Error during audio track cleanup:', error);
-            // Continue execution - this is a best-effort cleanup
+            /** Continue execution - this is a best-effort cleanup */
         }
     }
 
@@ -669,7 +678,7 @@ class MiraDesktop {
      */
     async verifyMicrophoneIsReleased() {
         try {
-            // Try to get microphone access briefly to verify it's not locked
+            /** Try to get microphone access briefly to verify it's not locked */
             const testStream = await navigator.mediaDevices.getUserMedia({ 
                 audio: { 
                     sampleRate: 16000,
@@ -677,7 +686,7 @@ class MiraDesktop {
                 } 
             });
             
-            // Immediately stop the test stream
+            /** Immediately stop the test stream */
             if (testStream) {
                 testStream.getTracks().forEach(track => {
                     track.stop();
@@ -686,11 +695,11 @@ class MiraDesktop {
             
         } catch (error) {
             if (error.name === 'NotAllowedError') {
-                // Expected if user has denied access
+                /** Expected if user has denied access */
             } else if (error.name === 'NotFoundError') {
-                // No microphone found
+                /** No microphone found */
             } else if (error.name === 'AbortError' || error.message.includes('busy')) {
-                // This suggests the microphone wasn't properly released
+                /** This suggests the microphone wasn't properly released */
                 throw new Error('Microphone appears to still be in use after VAD destruction');
             }
         }
@@ -700,7 +709,7 @@ class MiraDesktop {
      * Verify that recording has actually stopped
      */
     async verifyRecordingIsStopped() {
-        // Check internal state
+        /** Check internal state */
         if (this.isRecording) {
             console.log('Recording state verification - isRecording:', this.isRecording, 'micVAD:', !!this.micVAD);
         }
@@ -710,18 +719,18 @@ class MiraDesktop {
      * Check if the audio contains a cancel command like "Mira cancel"
      * This is a placeholder for potential future speech recognition integration
      */
-    checkForCancelCommand(audioData) { // eslint-disable-line no-unused-vars
-        // Note: This is a placeholder for cancel command detection
-        // In a full implementation, this could use a lightweight speech recognition
-        // to detect "Mira cancel" or similar commands locally before sending to backend
+    checkForCancelCommand(audioData) { /* eslint-disable-line no-unused-vars */
+        /** Note: This is a placeholder for cancel command detection */
+        /** In a full implementation, this could use a lightweight speech recognition */
+        /** to detect "Mira cancel" or similar commands locally before sending to backend */
         
-        // Future implementation could:
-        // 1. Use a lightweight local speech recognition model
-        // 2. Check for specific wake words like "Mira cancel", "stop", etc.
-        // 3. If detected, immediately call this.stopListening()
-        // 4. Return true/false to indicate if command was found
+        /** Future implementation could: */
+        /** 1. Use a lightweight local speech recognition model */
+        /** 2. Check for specific wake words like "Mira cancel", "stop", etc. */
+        /** 3. If detected, immediately call this.stopListening() */
+        /** 4. Return true/false to indicate if command was found */
         
-        return false; // No cancel command detected
+        return false;
     }
 
     /**
@@ -776,7 +785,7 @@ class MiraDesktop {
         this.log('info', `Debug mode ${enabled ? 'enabled' : 'disabled'}`);
         
         if (enabled) {
-            // Log current application state when debug mode is enabled
+            /** Log current application state when debug mode is enabled */
             this.debugLog('system', 'Debug mode activated - Current state', {
                 isConnected: this.isConnected,
                 isListening: this.isListening,
@@ -809,7 +818,7 @@ class MiraDesktop {
                 isConnected: this.isConnected,
                 isRegistered: this.isRegistered,
                 baseUrl: this.baseUrl,
-                clientId: this.clientId,
+                clientId: API_CONFIG.CLIENT_ID,
                 apiServiceInitialized: !!this.apiService
             },
             audio: {
@@ -913,29 +922,29 @@ Debug Shortcuts:
      */
     async processAndSendOptimizedAudio(audioFloat32Array) {
         try {
-            // Step 1: Analyze audio quality
+            /** Step 1: Analyze audio quality */
             const audioAnalysis = this.analyzeAudioQuality(audioFloat32Array);
             
-            // Step 2: Apply noise reduction if enabled
+            /** Step 2: Apply noise reduction if enabled */
             let processedAudio = audioFloat32Array;
             if (this.audioOptimization.enableAdvancedNoiseReduction) {
                 processedAudio = this.applyNoiseReduction(processedAudio, audioAnalysis);
             }
             
-            // Step 3: Apply dynamic gain control
+            /** Step 3: Apply dynamic gain control */
             if (this.audioOptimization.enableDynamicGainControl) {
                 processedAudio = this.applyDynamicGainControl(processedAudio, audioAnalysis);
             }
             
-            // Step 4: Apply spectral gating for further noise reduction
+            /** Step 4: Apply spectral gating for further noise reduction */
             if (this.audioOptimization.enableSpectralGating) {
                 processedAudio = this.applySpectralGating(processedAudio, audioAnalysis);
             }
             
-            // Step 5: Final quality check
+            /** Step 5: Final quality check */
             const finalAnalysis = this.analyzeAudioQuality(processedAudio);
             
-            // Step 6: Only send if audio quality is sufficient
+            /** Step 6: Only send if audio quality is sufficient */
             if (finalAnalysis.snr > this.audioOptimization.signalThreshold) {
                 await this.sendVADAudioToBackend(processedAudio);
             } else {
@@ -944,7 +953,7 @@ Debug Shortcuts:
             
         } catch (error) {
             console.error('Error in audio optimization pipeline:', error);
-            // Fallback to original audio if processing fails
+            /** Fallback to original audio if processing fails */
             await this.sendVADAudioToBackend(audioFloat32Array);
         }
     }
@@ -958,13 +967,14 @@ Debug Shortcuts:
         let maxAmplitude = 0;
         let silentSamples = 0;
         
-        // Calculate RMS and find peak amplitude
+        /** Calculate RMS and find peak amplitude */
         for (let i = 0; i < samples; i++) {
             const sample = Math.abs(audioFloat32Array[i]);
             sumSquares += sample * sample;
             maxAmplitude = Math.max(maxAmplitude, sample);
             
-            if (sample < 0.001) { // Threshold for "silent" samples
+            /** Threshold for "silent" samples */
+            if (sample < 0.001) {
                 silentSamples++;
             }
         }
@@ -972,13 +982,14 @@ Debug Shortcuts:
         const rms = Math.sqrt(sumSquares / samples);
         const energy = sumSquares / samples;
         
-        // Estimate SNR (simplified calculation)
+        /** Estimate SNR (simplified calculation) */
         const speechPower = rms * rms;
+        /** Estimate noise floor */
         const noisePower = silentSamples > samples * 0.1 ? 
-            Math.max(speechPower * 0.01, 1e-10) : speechPower * 0.1; // Estimate noise floor
+            Math.max(speechPower * 0.01, 1e-10) : speechPower * 0.1;
         const snr = 10 * Math.log10(speechPower / noisePower);
         
-        // Calculate dynamic range
+        /** Calculate dynamic range */
         const dynamicRange = 20 * Math.log10(maxAmplitude / Math.max(rms, 1e-10));
         
         return {
@@ -996,23 +1007,24 @@ Debug Shortcuts:
      */
     applyNoiseReduction(audioFloat32Array, analysis) {
         if (analysis.snr > 20) {
-            return audioFloat32Array; // Audio is already clean
+            return audioFloat32Array;
         }
         
         const result = new Float32Array(audioFloat32Array.length);
-        const noiseThreshold = analysis.rms * 0.3; // Adaptive noise threshold
+        /** Adaptive noise threshold */
+        const noiseThreshold = analysis.rms * 0.3;
         
-        // Simple spectral subtraction approach
+        /** Simple spectral subtraction approach */
         for (let i = 0; i < audioFloat32Array.length; i++) {
             const sample = audioFloat32Array[i];
             const sampleAbs = Math.abs(sample);
             
             if (sampleAbs > noiseThreshold) {
-                // Keep strong signals, apply gentle filtering to weak ones
+                /** Keep strong signals, apply gentle filtering to weak ones */
                 const gain = Math.min(1.0, sampleAbs / noiseThreshold);
                 result[i] = sample * gain;
             } else {
-                // Aggressive reduction for likely noise
+                /** Aggressive reduction for likely noise */
                 result[i] = sample * 0.1;
             }
         }
@@ -1025,11 +1037,11 @@ Debug Shortcuts:
      */
     applyDynamicGainControl(audioFloat32Array, analysis) {
         if (analysis.rms > 0.3) {
-            return audioFloat32Array; // Audio level is already good
+            return audioFloat32Array;
         }
         
-        // Calculate target RMS level
-        const targetRMS = 0.15; // Optimal level for transcription
+        /** Calculate target RMS level - optimal level for transcription */
+        const targetRMS = 0.15;
         const gainFactor = Math.min(3.0, targetRMS / Math.max(analysis.rms, 0.001));
         
         const result = new Float32Array(audioFloat32Array.length);
@@ -1048,19 +1060,19 @@ Debug Shortcuts:
         const windowSize = Math.min(512, Math.floor(audioFloat32Array.length / 8));
         const gateThreshold = analysis.rms * 0.2;
         
-        // Apply gating in overlapping windows
+        /** Apply gating in overlapping windows */
         for (let i = 0; i < audioFloat32Array.length; i++) {
             const windowStart = Math.max(0, i - windowSize / 2);
             const windowEnd = Math.min(audioFloat32Array.length, i + windowSize / 2);
             
-            // Calculate local RMS
+            /** Calculate local RMS */
             let localRMS = 0;
             for (let j = windowStart; j < windowEnd; j++) {
                 localRMS += audioFloat32Array[j] * audioFloat32Array[j];
             }
             localRMS = Math.sqrt(localRMS / (windowEnd - windowStart));
             
-            // Apply gate
+            /** Apply gate */
             const gateGain = localRMS > gateThreshold ? 1.0 : 0.3;
             result[i] = audioFloat32Array[i] * gateGain;
         }
@@ -1087,16 +1099,16 @@ Debug Shortcuts:
                 throw new Error('Invalid audio data format');
             }
 
-            // Convert Float32Array to 16-bit PCM for backend compatibility
+            /** Convert Float32Array to 16-bit PCM for backend compatibility */
             const audioInt16 = new Int16Array(audioFloat32Array.length);
             let validSamples = 0;
 
             for (let i = 0; i < audioFloat32Array.length; i++) {
-                // Clamp and convert to 16-bit signed integer
+                /** Clamp and convert to 16-bit signed integer */
                 const sample = Math.max(-1, Math.min(1, audioFloat32Array[i]));
                 audioInt16[i] = Math.round(sample * 32767);
 
-                // Count non-zero samples to validate audio content
+                /** Count non-zero samples to validate audio content */
                 if (Math.abs(sample) > 0.001) {
                     validSamples++;
                 }
@@ -1107,15 +1119,15 @@ Debug Shortcuts:
                 this.log('warn', `Audio appears to be mostly silence, validSamples: ${validSamples} of ${audioFloat32Array.length}`);
             }
 
-            // Convert to bytes for backend (little-endian)
+            /** Convert to bytes for backend (little-endian) */
             const audioBytes = new Uint8Array(audioInt16.buffer);
 
-            // Validate connection before sending
+            /** Validate connection before sending */
             if (!this.isConnected || !this.apiService) {
                 throw new Error(ERROR_MESSAGES.BACKEND.SERVICE_UNAVAILABLE);
             }
 
-            // Use ApiService to register interaction
+            /** Use ApiService to register interaction */
             const response = await this.apiService.registerInteraction(audioBytes.buffer, 'wav');
 
             if (response.success) {
@@ -1177,7 +1189,7 @@ Debug Shortcuts:
 
         if (this.isListening && this.micStatusText) {
             const message = statusMessages[status] || 'Unknown status';
-            // Only update specific statuses, maintain the main listening message for most cases
+            /** Only update specific statuses, maintain the main listening message for most cases */
             if (status === 'stopping') {
                 this.micStatusText.textContent = message;
             } else if (status === 'stopped') {
@@ -1237,7 +1249,7 @@ Debug Shortcuts:
     updateConnectionStatus(connected) {
         if (connected) {
             this.statusDot.className = 'status-dot connected';
-            const connectedHost = [...this.baseUrls.entries()].find(([, url]) => url === this.baseUrl)?.[0];
+            const connectedHost = [...API_CONFIG.BASE_URLS.entries()].find(([, url]) => url === this.baseUrl)?.[0];
             this.statusText.textContent = 'Connected to ' + (connectedHost || this.baseUrl || 'unknown server');
             this.micButton.disabled = false;
         } else {
@@ -1286,7 +1298,7 @@ Debug Shortcuts:
 
         this.transcriptionInterval = setInterval(async () => {
             if (this.isListening && this.isConnected) {
-                // await this.fetchLatestInteractions();
+                /** await this.fetchLatestInteractions(); */
             } else {
                 this.stopTranscriptionPolling();
             }
@@ -1364,7 +1376,7 @@ Debug Shortcuts:
             speaker = response.data;
         } else {
             this.log('error', `Failed to fetch speaker ${interaction.speaker_id}`, { error: response.error });
-            // Create a fallback speaker object
+            /** Create a fallback speaker object */
             speaker = { name: 'Unknown Speaker', id: interaction.speaker_id };
         }
 
@@ -1385,7 +1397,7 @@ Debug Shortcuts:
         const transcriptionElement = this.createTranscriptionElement(transcription);
         this.transcriptionContent.appendChild(transcriptionElement);
 
-        // Scroll to bottom
+        /** Scroll to bottom */
         this.transcriptionContent.scrollTop = this.transcriptionContent.scrollHeight;
     }
 
@@ -1484,7 +1496,7 @@ Debug Shortcuts:
     showMessage(message, type = 'info') {
         console.log('Message:', message);
 
-        // Create a simple toast notification for user feedback
+        /** Create a simple toast notification for user feedback */
         const toast = document.createElement('div');
         toast.className = `toast toast-${type}`;
         toast.style.cssText = `
@@ -1551,12 +1563,12 @@ Debug Shortcuts:
 
     async cleanup() {
         try {
-            // Stop recording first
+            /** Stop recording first */
             if (this.isRecording && this.micVAD) {
                 await this.stopAudioCapture();
             }
 
-            // Clear intervals
+            /** Clear intervals */
             if (this.connectionCheckInterval) {
                 clearInterval(this.connectionCheckInterval);
                 this.connectionCheckInterval = null;
@@ -1567,7 +1579,7 @@ Debug Shortcuts:
                 this.transcriptionInterval = null;
             }
 
-            // Stop listening service and deregister from backend
+            /** Stop listening service and deregister from backend */
             if (this.isRegistered) {
                 try {
                     await this.deregisterClient();
@@ -1580,7 +1592,7 @@ Debug Shortcuts:
                 }
             }
 
-            // Final state reset
+            /** Final state reset */
             this.isRecording = false;
             this.isListening = false;
             this.isToggling = false;
@@ -1603,15 +1615,15 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    window.addEventListener('beforeunload', async () => {
+        window.addEventListener('beforeunload', async () => {
         if (window.miraApp && window.miraApp.isRegistered && !window.miraApp._deregistrationAttempted) {
             if (window.miraApp.apiService) {
-                // Use ApiService if available (fire and forget for beforeunload)
-                window.miraApp.apiService.deregisterClient().catch(() => {}); // Ignore errors in beforeunload
+                /** Use ApiService if available (fire and forget for beforeunload) */
+                window.miraApp.apiService.deregisterClient().catch(() => {});
             } else {
-                // Fallback to direct fetch for backwards compatibility
-                const url = `${window.miraApp.baseUrl}/service/client/deregister/${encodeURIComponent(window.miraApp.clientId)}`;
-                fetch(url, { method: 'DELETE' }).catch(() => {}); // Ignore errors
+                /** Fallback to direct fetch for backwards compatibility */
+                const url = `${window.miraApp.baseUrl}/service/client/deregister/${encodeURIComponent(API_CONFIG.CLIENT_ID)}`;
+                fetch(url, { method: 'DELETE' }).catch(() => {});
             }
             window.miraApp._deregistrationAttempted = true;
         }
@@ -1620,12 +1632,12 @@ document.addEventListener('DOMContentLoaded', () => {
     window.addEventListener('unload', () => {
         if (window.miraApp && window.miraApp.isRegistered && !window.miraApp._deregistrationAttempted) {
             if (window.miraApp.apiService) {
-                // Use ApiService if available (fire and forget for unload)
-                window.miraApp.apiService.deregisterClient().catch(() => {}); // Ignore errors in unload
+                /** Use ApiService if available (fire and forget for unload) */
+                window.miraApp.apiService.deregisterClient().catch(() => {});
             } else {
-                // Fallback to direct fetch for backwards compatibility
-                const url = `${window.miraApp.baseUrl}/service/client/deregister/${encodeURIComponent(window.miraApp.clientId)}`;
-                fetch(url, { method: 'DELETE' }).catch(() => {}); // Ignore errors
+                /** Fallback to direct fetch for backwards compatibility */
+                const url = `${window.miraApp.baseUrl}/service/client/deregister/${encodeURIComponent(API_CONFIG.CLIENT_ID)}`;
+                fetch(url, { method: 'DELETE' }).catch(() => {});
             }
             window.miraApp._deregistrationAttempted = true;
         }
@@ -1640,7 +1652,7 @@ document.addEventListener('keydown', (e) => {
         }
     }
 
-    // Ctrl+Shift+D - Toggle debug mode
+    /** Ctrl+Shift+D - Toggle debug mode */
     if (e.ctrlKey && e.shiftKey && e.code === 'KeyD') {
         e.preventDefault();
         if (window.miraApp) {
@@ -1650,7 +1662,7 @@ document.addEventListener('keydown', (e) => {
         }
     }
 
-    // Ctrl+Shift+M - Show detailed debug info (was debug mode toggle, now moved to D)
+    /** Ctrl+Shift+M - Show detailed debug info (was debug mode toggle, now moved to D) */
     if (e.ctrlKey && e.shiftKey && e.code === 'KeyM') {
         e.preventDefault();
         if (window.miraApp) {
@@ -1658,7 +1670,7 @@ document.addEventListener('keydown', (e) => {
         }
     }
 
-    // Ctrl+Shift+T - Test backend connection
+    /** Ctrl+Shift+T - Test backend connection */
     if (e.ctrlKey && e.shiftKey && e.code === 'KeyT') {
         e.preventDefault();
         if (window.miraApp) {
@@ -1666,7 +1678,7 @@ document.addEventListener('keydown', (e) => {
         }
     }
 
-    // Ctrl+Shift+A - Show debug help
+    /** Ctrl+Shift+A - Show debug help */
     if (e.ctrlKey && e.shiftKey && e.code === 'KeyA') {
         e.preventDefault();
         if (window.miraApp) {
@@ -1675,7 +1687,7 @@ document.addEventListener('keydown', (e) => {
         }
     }
 
-    // Ctrl+Shift+I - Get debug info
+    /** Ctrl+Shift+I - Get debug info */
     if (e.ctrlKey && e.shiftKey && e.code === 'KeyI') {
         e.preventDefault();
         if (window.miraApp) {
