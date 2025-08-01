@@ -19,6 +19,8 @@ export const API_CONFIG = {
         VAD_LIBRARY_LOAD: 15000,
         /** Backend stop request timeout in milliseconds */
         BACKEND_STOP_REQUEST: 10000,
+        /** Health check interval in milliseconds */
+        HEALTH_CHECK_INTERVAL: 1000,
     },
     RETRY_CONFIG: {
         MAX_RETRIES: 2,
@@ -49,6 +51,14 @@ export const AUDIO_CONFIG = {
         TARGET_RMS: 0.15,
         /** Minimum SNR threshold in dB */
         MIN_SNR_DB: -20,
+        /** Enable advanced noise reduction features */
+        ENABLE_ADVANCED_NOISE_REDUCTION: true,
+        /** Enable dynamic gain control */
+        ENABLE_DYNAMIC_GAIN_CONTROL: true,
+        /** Enable spectral gating */
+        ENABLE_SPECTRAL_GATING: true,
+        /** Enable adaptive thresholds */
+        ENABLE_ADAPTIVE_THRESHOLDS: true,
     },
     CONSTRAINTS: {
         SAMPLE_RATE: 16000,
@@ -58,6 +68,24 @@ export const AUDIO_CONFIG = {
         ECHO_CANCELLATION: true,
         NOISE_SUPPRESSION: true,
         AUTO_GAIN_CONTROL: true,
+        /** Enhanced Google-specific audio constraints */
+        GOOGLE_ECHO_CANCELLATION: true,
+        GOOGLE_AUTO_GAIN_CONTROL: true,
+        GOOGLE_NOISE_SUPPRESSION: true,
+        GOOGLE_HIGHPASS_FILTER: true,
+        GOOGLE_AUDIO_MIRRORING: false,
+    },
+    VAD_SETTINGS: {
+        /** Sample rate for VAD processing */
+        SAMPLE_RATE: 16000,
+        /** Frame samples for VAD processing */
+        FRAME_SAMPLES: 1536,
+        /** Target silence time in milliseconds */
+        TARGET_SILENCE_MS: 420,
+        /** Frames for speech onset capture */
+        PRE_SPEECH_PAD_FRAMES: 2,
+        /** Minimum frames for speech detection */
+        MIN_SPEECH_FRAMES: 4,
     },
     PROCESSING: {
         FRAME_SIZE: 512,

@@ -23,9 +23,9 @@ class MiraDesktop {
         this.transcriptions = [];
         this.transcription_ids = new Set();
 
-        /** Speaker management */
-        this.speakerIndexMap = new Map();
-        this.nextSpeakerIndex = 0;
+        /** Person management */
+        this.personIndexMap = new Map();
+        this.nextPersonIndex = 0;
 
         /** Audio capture properties for VAD-based recording */
         this.micVAD = null;
@@ -40,12 +40,12 @@ class MiraDesktop {
 
         /** Enhanced audio optimization properties from constants */
         this.audioOptimization = {
-            enableAdvancedNoiseReduction: true,
-            enableDynamicGainControl: true,
-            enableSpectralGating: true,
+            enableAdvancedNoiseReduction: AUDIO_CONFIG.OPTIMIZATION.ENABLE_ADVANCED_NOISE_REDUCTION,
+            enableDynamicGainControl: AUDIO_CONFIG.OPTIMIZATION.ENABLE_DYNAMIC_GAIN_CONTROL,
+            enableSpectralGating: AUDIO_CONFIG.OPTIMIZATION.ENABLE_SPECTRAL_GATING,
             noiseFloor: AUDIO_CONFIG.OPTIMIZATION.NOISE_FLOOR,
             signalThreshold: AUDIO_CONFIG.OPTIMIZATION.SIGNAL_THRESHOLD,
-            adaptiveThresholds: true,
+            adaptiveThresholds: AUDIO_CONFIG.OPTIMIZATION.ENABLE_ADAPTIVE_THRESHOLDS,
             environmentalNoise: 0,
             lastNoiseAnalysis: 0
         };
@@ -118,8 +118,12 @@ class MiraDesktop {
     setupEventListeners() {
         this.micButton.addEventListener('click', () => this.toggleListening());
         this.clearButton.addEventListener('click', () => this.clearTranscriptions());
-        this.retryButton.addEventListener('click', () => this.apiService.checkConnection());
-        this.clientNameInput.addEventListener('change', (e) => this.handleClientNameChange(e.target.value));
+        this.retryButton.addEventListener('click', () => this.handleRetryConnection());
+        this.clientNameInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                this.handleClientNameChange(e.target.value);
+            }
+        });
 
         document.addEventListener('keydown', (e) => {
             if (e.key === ' ' && !e.target.matches('input, textarea')) {
@@ -133,6 +137,18 @@ class MiraDesktop {
      * Handle client name change from input field
      * @param {string} newClientName - New client name
      */
+    /**
+     * Handle retry connection button click with visual feedback
+     */
+    handleRetryConnection() {
+        this.showMessage('Attempting to reconnect...', 'info');
+        this.apiService.checkConnection();
+    }
+
+    /**
+     * Handle client name change when user presses Enter
+     * @param {string} newClientName - New client name input
+     */
     async handleClientNameChange(newClientName) {
         if (!newClientName || newClientName.trim() === '') {
             /** Reset to current client ID if empty */
@@ -142,11 +158,21 @@ class MiraDesktop {
 
         const success = await this.apiService.updateClientId(newClientName.trim());
         if (success) {
-            this.log('info', `Client name updated to: ${newClientName.trim()}`);
+            this.log('info', `Client name updated to: ${this.apiService.clientId}`);
             this.debugLog('client', 'Client name changed successfully', {
-                newClientName: newClientName.trim(),
+                newClientName: this.apiService.clientId,
                 connected: this.isConnected
             });
+            
+            /** Show success message and make text appear gray/placeholder-like */
+            this.showMessage(`Client name updated to: ${this.apiService.clientId}`, 'info');
+            this.clientNameInput.style.color = '#999';
+            this.clientNameInput.value = this.apiService.clientId;
+            
+            /** Reset text color after a short delay */
+            setTimeout(() => {
+                this.clientNameInput.style.color = '';
+            }, 2000);
         } else {
             /** Revert input on failure */
             this.clientNameInput.value = this.apiService.clientId;
@@ -425,10 +451,9 @@ class MiraDesktop {
             }
 
             const { MicVAD } = vad;
-            const sampleRate = 16000;
-            const frameSamples = 1536;
-            /** Reduced for more responsive detection */
-            const targetSilenceMs = 420;
+            const sampleRate = AUDIO_CONFIG.VAD_SETTINGS.SAMPLE_RATE;
+            const frameSamples = AUDIO_CONFIG.VAD_SETTINGS.FRAME_SAMPLES;
+            const targetSilenceMs = AUDIO_CONFIG.VAD_SETTINGS.TARGET_SILENCE_MS;
             const redemptionFrames = Math.max(1, Math.round((targetSilenceMs * sampleRate) / (frameSamples * 1000)));
 
             const vadInitPromise = MicVAD.new({
@@ -442,10 +467,8 @@ class MiraDesktop {
 
                 /** Audio quality settings optimized for transcription */
                 frameSamples: frameSamples,
-                /** Increased to capture speech onset */
-                preSpeechPadFrames: 2,
-                /** Increased to avoid false positives */
-                minSpeechFrames: 4,
+                preSpeechPadFrames: AUDIO_CONFIG.VAD_SETTINGS.PRE_SPEECH_PAD_FRAMES,
+                minSpeechFrames: AUDIO_CONFIG.VAD_SETTINGS.MIN_SPEECH_FRAMES,
 
                 /** Enhanced audio constraints for maximum quality */
                 additionalAudioConstraints: {
@@ -456,11 +479,11 @@ class MiraDesktop {
                     channelCount: AUDIO_CONFIG.CONSTRAINTS.CHANNELS,
                     
                     /** Advanced constraints for better audio quality */
-                    googEchoCancellation: true,
-                    googAutoGainControl: true,
-                    googNoiseSuppression: true,
-                    googHighpassFilter: true,
-                    googAudioMirroring: false,
+                    googEchoCancellation: AUDIO_CONFIG.CONSTRAINTS.GOOGLE_ECHO_CANCELLATION,
+                    googAutoGainControl: AUDIO_CONFIG.CONSTRAINTS.GOOGLE_AUTO_GAIN_CONTROL,
+                    googNoiseSuppression: AUDIO_CONFIG.CONSTRAINTS.GOOGLE_NOISE_SUPPRESSION,
+                    googHighpassFilter: AUDIO_CONFIG.CONSTRAINTS.GOOGLE_HIGHPASS_FILTER,
+                    googAudioMirroring: AUDIO_CONFIG.CONSTRAINTS.GOOGLE_AUDIO_MIRRORING,
                     latency: AUDIO_CONFIG.CONSTRAINTS.LATENCY,
                 },
 
@@ -1333,25 +1356,25 @@ Debug Shortcuts:
         }
 
         if (!this.apiService) {
-            this.log('error', 'Cannot fetch speaker: API service not initialized');
+            this.log('error', 'Cannot fetch person: API service not initialized');
             return;
         }
 
-        const response = await this.apiService.getSpeaker(interaction.speaker_id);
-        let speaker = null;
+        const person = await this.apiService.getPerson(interaction.speaker_id);
+        let personData = null;
         
-        if (response.success) {
-            speaker = response.data;
+        if (person) {
+            personData = person;
         } else {
-            this.log('error', `Failed to fetch speaker ${interaction.speaker_id}`, { error: response.error });
-            /** Create a fallback speaker object */
-            speaker = { name: 'Unknown Speaker', id: interaction.speaker_id };
+            this.log('error', `Failed to fetch person ${interaction.speaker_id}`);
+            /** Create a fallback person object */
+            personData = { name: 'Unknown Person', id: interaction.speaker_id };
         }
 
         const transcription = {
             text: interaction.text,
             timestamp: timestamp,
-            speaker: speaker,
+            speaker: personData,
             id: interaction.id
         };
 
@@ -1379,13 +1402,13 @@ Debug Shortcuts:
     createTranscriptionElement(transcription) {
         const element = document.createElement('div');
         element.className = 'transcription-item';
-        const speakerColor = this.getSpeakerColor(transcription.speaker);
-        element.style.borderLeftColor = speakerColor.border;
-        element.style.backgroundColor = speakerColor.background;
+        const personColor = this.getPersonColor(transcription.speaker);
+        element.style.borderLeftColor = personColor.border;
+        element.style.backgroundColor = personColor.background;
 
         element.innerHTML = `
-            <div class="speaker-info" style="color: ${speakerColor.text};">
-                <span class="speaker-name">${transcription.speaker.name || "Speaker " + transcription.speaker.index || transcription.speaker.id}</span>
+            <div class="person-info" style="color: ${personColor.text};">
+                <span class="person-name">${transcription.speaker.name || "Person " + transcription.speaker.index || transcription.speaker.id}</span>
                 <span class="timestamp">${transcription.timestamp}</span>
             </div>
             <div class="text">${transcription.text}</div>
@@ -1393,8 +1416,8 @@ Debug Shortcuts:
         return element;
     }
 
-    getSpeakerColor(speaker) {
-        const speakerIndex = parseInt(speaker.index) || this.getOrAssignSpeakerIndex(speaker.id);
+    getPersonColor(person) {
+        const personIndex = parseInt(person.index) || this.getOrAssignPersonIndex(person.id);
 
         const greenShades = [
             { background: '#f0fffa', border: '#00ff88', text: '#00cc6a' },
@@ -1403,16 +1426,16 @@ Debug Shortcuts:
             { background: '#d1fae5', border: '#00c249', text: '#007f30' },
         ];
 
-        return greenShades[speakerIndex % greenShades.length];
+        return greenShades[personIndex % greenShades.length];
     }
 
-    getOrAssignSpeakerIndex(speaker) {
-        if (!this.speakerIndexMap.has(speaker)) {
-            this.speakerIndexMap.set(speaker, this.nextSpeakerIndex);
-            this.nextSpeakerIndex++;
+    getOrAssignPersonIndex(person) {
+        if (!this.personIndexMap.has(person)) {
+            this.personIndexMap.set(person, this.nextPersonIndex);
+            this.nextPersonIndex++;
         }
 
-        return this.speakerIndexMap.get(speaker);
+        return this.personIndexMap.get(person);
     }
 
     /**

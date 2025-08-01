@@ -33,7 +33,7 @@ export class ApiService extends EventTarget {
         this.checkConnection();
         this.healthCheckInterval = setInterval(() => {
             this.checkConnection();
-        }, 1000);
+        }, API_CONFIG.TIMEOUTS.HEALTH_CHECK_INTERVAL);
     }
 
     /**
@@ -149,6 +149,16 @@ export class ApiService extends EventTarget {
 
         try {
             const url = `${this.baseUrl}${endpoint}`;
+            
+            /** Log attempted URL if in debug mode */
+            if (typeof window !== 'undefined' && window.miraApp && window.miraApp.debugMode) {
+                console.log(`[API DEBUG] Attempting request to: ${url}`, {
+                    method: options.method || 'GET',
+                    endpoint: endpoint,
+                    baseUrl: this.baseUrl
+                });
+            }
+            
             const response = await fetch(url, {
                 ...options,
                 signal: controller.signal,
@@ -204,10 +214,14 @@ export class ApiService extends EventTarget {
         }
 
         const oldClientId = this.clientId;
-        const trimmedClientId = newClientId.trim();
+        /** Sanitize client ID: convert special characters to dashes and trim */
+        const sanitizedClientId = newClientId.trim()
+            .replace(/[^a-zA-Z0-9\-_]/g, '-')  // Replace special chars with dashes
+            .replace(/-+/g, '-')                // Replace multiple dashes with single dash
+            .replace(/^-|-$/g, '');             // Remove leading/trailing dashes
         
         /** No change needed */
-        if (trimmedClientId === oldClientId) {
+        if (sanitizedClientId === oldClientId) {
             return true;
         }
 
@@ -218,7 +232,7 @@ export class ApiService extends EventTarget {
             }
 
             /** Update to new client ID */
-            this.clientId = trimmedClientId;
+            this.clientId = sanitizedClientId;
 
             /** If connected, register with new client ID */
             if (this.isConnected) {
@@ -232,7 +246,7 @@ export class ApiService extends EventTarget {
             } else {
                 /** Not connected, just update the ID */
                 this.dispatchEvent(new CustomEvent('clientIdChanged', {
-                    detail: { oldClientId, newClientId: trimmedClientId }
+                    detail: { oldClientId, newClientId: sanitizedClientId }
                 }));
                 return true;
             }
@@ -384,22 +398,22 @@ export class ApiService extends EventTarget {
     }
 
     /**
-     * Get speaker/person by ID
-     * @param {string} speakerId - Speaker UUID
+     * Get person by ID
+     * @param {string} personId - Person UUID
      * @returns {Promise<Person|null>} Person object or null if not found
      */
-    async getSpeaker(speakerId) {
-        const endpoint = `${API_ENDPOINTS.SPEAKERS}/${speakerId}`;
+    async getPerson(personId) {
+        const endpoint = `${API_ENDPOINTS.SPEAKERS}/${personId}`;
         const response = await this.makeRequest(endpoint, { method: 'GET' });
         
         return response.success && response.data ? Person.fromApiResponse(response.data) : null;
     }
 
     /**
-     * Get all speakers/persons
+     * Get all persons
      * @returns {Promise<Array<Person>>} Array of person objects
      */
-    async getSpeakers() {
+    async getPersons() {
         const response = await this.makeRequest(API_ENDPOINTS.SPEAKERS, { method: 'GET' });
         
         if (response.success && response.data && Array.isArray(response.data)) {
