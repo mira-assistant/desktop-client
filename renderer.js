@@ -13,11 +13,11 @@ class MiraDesktop {
         /** Initialize API service that manages its own connection */
         this.apiService = new ApiService();
 
-        /** Connection state (managed by API service) */
-        this.isConnected = false;
+        /** Local state (not available via API service) */
         this.isListening = false;
         this.isToggling = false;
         this.isProcessingAudio = false;
+        this.isDeregistering = false;
 
         /** Transcription data */
         this.transcriptions = [];
@@ -46,8 +46,8 @@ class MiraDesktop {
             noiseFloor: AUDIO_CONFIG.OPTIMIZATION.NOISE_FLOOR,
             signalThreshold: AUDIO_CONFIG.OPTIMIZATION.SIGNAL_THRESHOLD,
             adaptiveThresholds: AUDIO_CONFIG.OPTIMIZATION.ENABLE_ADAPTIVE_THRESHOLDS,
-            environmentalNoise: 0,
-            lastNoiseAnalysis: 0
+            environmentalNoise: AUDIO_CONFIG.OPTIMIZATION.ENVIRONMENTAL_NOISE,
+            lastNoiseAnalysis: AUDIO_CONFIG.OPTIMIZATION.LAST_NOISE_ANALYSIS
         };
 
         /** Debug mode configuration */
@@ -69,21 +69,16 @@ class MiraDesktop {
             const { connected, hostName, url } = event.detail;
 
             if (connected) {
-                this.isConnected = true;
                 this.updateConnectionStatus(true);
                 this.hideConnectionBanner();
 
                 /** Log successful connection */
                 this.log('info', `Connected to ${hostName} at ${url}`);
             } else {
-                this.isConnected = false;
                 this.updateConnectionStatus(false);
                 this.showConnectionBanner();
 
-                /** Connection lost - disable listening through unified state management */
-                if (this.isListening) {
-                    this.manageListeningState(false);
-                }
+                /** Connection lost - let statusChange handle listening state through health checks */
             }
         });
 
@@ -205,7 +200,7 @@ class MiraDesktop {
             this.log('info', `Client name updated to: ${this.apiService.clientId}`);
             this.debugLog('client', 'Client name changed successfully', {
                 newClientName: this.apiService.clientId,
-                connected: this.isConnected
+                connected: this.apiService.isConnected
             });
 
             /** Show success message and make text appear gray/placeholder-like */
@@ -274,10 +269,10 @@ class MiraDesktop {
                 timestamp: Date.now(),
                 debugData: data,
                 appState: {
-                    isConnected: this.isConnected,
+                    isConnected: this.apiService.isConnected,
                     isListening: this.isListening,
                     isRecording: this.isRecording,
-                    isRegistered: this.isRegistered
+                    isRegistered: this.apiService.isRegistered
                 }
             });
         }
@@ -315,6 +310,11 @@ class MiraDesktop {
      * Uses ApiService for proper cleanup and error handling
      */
     async deregisterClient() {
+        if (this.isDeregistering) {
+            return;
+        }
+        
+        this.isDeregistering = true;
         try {
             const success = await this.apiService.deregisterClient();
 
@@ -330,7 +330,7 @@ class MiraDesktop {
     }
 
     async toggleListening() {
-        if (!this.isConnected) {
+        if (!this.apiService.isConnected) {
             this.showMessage('Please wait for connection to the backend server');
             return;
         }
@@ -389,7 +389,7 @@ class MiraDesktop {
             /** Log detailed error information for debugging */
             console.error('Toggle listening error details:', {
                 message: error.message,
-                isConnected: this.isConnected,
+                isConnected: this.apiService.isConnected,
                 isListening: this.isListening,
                 isRecording: this.isRecording
             });
@@ -730,9 +730,9 @@ class MiraDesktop {
                 timestamp: new Date().toISOString()
             },
             connection: {
-                isConnected: this.isConnected,
-                isRegistered: this.isRegistered,
-                baseUrl: this.baseUrl,
+                isConnected: this.apiService.isConnected,
+                isRegistered: this.apiService.isRegistered,
+                baseUrl: this.apiService.baseUrl,
                 clientId: API_CONFIG.CLIENT_ID,
                 apiServiceInitialized: !!this.apiService
             },
@@ -971,7 +971,7 @@ class MiraDesktop {
             const audioBytes = new Uint8Array(audioInt16.buffer);
 
             /** Validate connection before sending */
-            if (!this.isConnected || !this.apiService) {
+            if (!this.apiService.isConnected || !this.apiService) {
                 throw new Error(ERROR_MESSAGES.BACKEND.SERVICE_UNAVAILABLE);
             }
 
@@ -1099,7 +1099,7 @@ class MiraDesktop {
         this.stopTranscriptionPolling();
 
         this.transcriptionInterval = setInterval(async () => {
-            if (this.isListening && this.isConnected) {
+            if (this.isListening && this.apiService.isConnected) {
                 /** await this.fetchLatestInteractions(); */
             } else {
                 this.stopTranscriptionPolling();
@@ -1405,14 +1405,16 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     window.addEventListener('beforeunload', async () => {
-        if (window.miraApp && window.miraApp.apiService.isRegistered) {
+        if (window.miraApp && window.miraApp.apiService.isRegistered && !window.miraApp.isDeregistering) {
             /** Use ApiService for deregistration (fire and forget for beforeunload) */
+            window.miraApp.isDeregistering = true;
             window.miraApp.apiService.deregisterClient().catch(() => { });
         }
     });
 
     window.addEventListener('unload', () => {
-        if (window.miraApp && window.miraApp.isRegistered && !window.miraApp._deregistrationAttempted) {
+        if (window.miraApp && window.miraApp.isRegistered && !window.miraApp.isDeregistering) {
+            window.miraApp.isDeregistering = true;
             if (window.miraApp.apiService) {
                 /** Use ApiService if available (fire and forget for unload) */
                 window.miraApp.apiService.deregisterClient().catch(() => { });
@@ -1421,7 +1423,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 const url = `${window.miraApp.baseUrl}/service/client/deregister/${encodeURIComponent(API_CONFIG.CLIENT_ID)}`;
                 fetch(url, { method: 'DELETE' }).catch(() => { });
             }
-            window.miraApp._deregistrationAttempted = true;
         }
     });
 });

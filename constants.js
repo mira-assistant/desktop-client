@@ -59,6 +59,10 @@ export const AUDIO_CONFIG = {
         ENABLE_SPECTRAL_GATING: true,
         /** Enable adaptive thresholds */
         ENABLE_ADAPTIVE_THRESHOLDS: true,
+        /** Environmental noise baseline */
+        ENVIRONMENTAL_NOISE: 0,
+        /** Last noise analysis timestamp */
+        LAST_NOISE_ANALYSIS: 0,
     },
     CONSTRAINTS: {
         SAMPLE_RATE: 16000,
