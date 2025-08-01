@@ -10,20 +10,20 @@ class MiraDesktop {
      * Initialize the MiraDesktop application
      */
     constructor() {
-        this.baseUrl = null;
-        this.apiService = null;
+        /** Initialize API service that manages its own connection */
+        this.apiService = new ApiService();
         
+        /** Connection state (managed by API service) */
         this.isConnected = false;
         this.isListening = false;
-        this.isRegistered = false;
         this.isToggling = false;
         this.isProcessingAudio = false;
-        this._deregistrationAttempted = false;
 
+        /** Transcription data */
         this.transcriptions = [];
         this.transcription_ids = new Set();
-        this.connectionCheckInterval = null;
 
+        /** Speaker management */
         this.speakerIndexMap = new Map();
         this.nextSpeakerIndex = 0;
 
@@ -54,9 +54,46 @@ class MiraDesktop {
         this.debugMode = false;
         this.debugLevel = DEBUG_CONFIG.LOG_LEVELS.INFO;
 
+        /** Set up API service event listeners */
+        this.setupApiEventListeners();
+
         this.initializeElements();
         this.setupEventListeners();
-        this.startConnectionCheck();
+    }
+
+    /**
+     * Set up event listeners for API service events
+     */
+    setupApiEventListeners() {
+        /** Listen for connection changes */
+        this.apiService.addEventListener('connectionChange', (event) => {
+            const { connected, hostName, url, features } = event.detail;
+            
+            if (connected) {
+                this.isConnected = true;
+                this.updateConnectionStatus(true);
+                this.hideConnectionBanner();
+                this.updateFeatures(features);
+                
+                /** Log successful connection */
+                this.log('info', `Connected to ${hostName} at ${url}`);
+            } else {
+                this.isConnected = false;
+                this.updateConnectionStatus(false);
+                this.showConnectionBanner();
+                
+                /** Stop listening if connection lost */
+                if (this.isListening) {
+                    this.stopListening();
+                }
+            }
+        });
+
+        /** Listen for interaction updates */
+        this.apiService.addEventListener('interactionsUpdated', (event) => {
+            const { interactionIds } = event.detail;
+            this.fetchLatestInteractions(interactionIds);
+        });
     }
 
     initializeElements() {
@@ -75,7 +112,7 @@ class MiraDesktop {
     setupEventListeners() {
         this.micButton.addEventListener('click', () => this.toggleListening());
         this.clearButton.addEventListener('click', () => this.clearTranscriptions());
-        this.retryButton.addEventListener('click', () => this.checkConnection());
+        this.retryButton.addEventListener('click', () => this.apiService.checkConnection());
 
         document.addEventListener('keydown', (e) => {
             if (e.key === ' ' && !e.target.matches('input, textarea')) {
@@ -144,58 +181,11 @@ class MiraDesktop {
     }
 
     /**
-     * Check connection to available servers and establish API service
-     * Attempts to connect to configured servers and initializes API service
+     * Check connection to available servers
+     * Wrapper method that delegates to API service
      */
     async checkConnection() {
-        let urls = Object.fromEntries(API_CONFIG.BASE_URLS);
-
-        if (this.baseUrl) {
-            urls = { "cachedUrl": this.baseUrl, ...urls };
-        }
-
-        let connected = false;
-
-        for (const [hostName, url] of Object.entries(urls)) {
-            try {
-                /** Create temporary API service for health check */
-                const tempApiService = new ApiService(url);
-                const response = await tempApiService.healthCheck();
-                
-                if (response.success) {
-                    this.baseUrl = url;
-                    /** Set the working API service */
-                    this.apiService = tempApiService;
-                    this.updateConnectionStatus(true);
-                    this.hideConnectionBanner();
-                    this.isConnected = true;
-
-                    if (!this.isRegistered) {
-                        await this.registerClient();
-                    }
-
-                    this.updateFeatures(response.data.features);
-                    this.updateServerStatus(response.data);
-                    this.fetchLatestInteractions(response.data.recent_interactions);
-
-                    this.log('info', `Connected to ${hostName} at ${url}`);
-                    connected = true;
-                    break;
-                } else {
-                    this.log('warn', `Connection check failed for ${hostName}: ${response.error}`);
-                }
-            } catch (error) {
-                this.log('warn', `Failed to connect to ${hostName} at ${url}: ${error.message}`);
-            }
-        }
-
-        if (!connected) {
-            this.isConnected = false;
-            this.isRegistered = false;
-            this._deregistrationAttempted = false;
-            this.updateConnectionStatus(false);
-            this.showConnectionBanner();
-        }
+        return this.apiService.checkConnection();
     }
 
     /**
@@ -203,20 +193,14 @@ class MiraDesktop {
      * Uses ApiService for proper error handling and response parsing
      */
     async registerClient() {
-        if (!this.apiService) {
-            this.log('error', 'Cannot register client: API service not initialized');
-            return;
-        }
-
         try {
-            const response = await this.apiService.registerClient();
+            const success = await this.apiService.registerClient();
             
-            if (response.success) {
-                this.isRegistered = true;
+            if (success) {
                 this.log('info', SUCCESS_MESSAGES.REGISTRATION);
                 this.debugLog('api', 'Client registration successful', { clientId: API_CONFIG.CLIENT_ID });
             } else {
-                this.log('error', `Failed to register client: ${response.error}`, { status: response.status });
+                this.log('error', 'Failed to register client');
             }
         } catch (error) {
             this.log('error', `Client registration error: ${error.message}`);
@@ -228,21 +212,14 @@ class MiraDesktop {
      * Uses ApiService for proper cleanup and error handling
      */
     async deregisterClient() {
-        if (!this.isRegistered || this._deregistrationAttempted || !this.apiService) {
-            return;
-        }
-
-        this._deregistrationAttempted = true;
-
         try {
-            const response = await this.apiService.deregisterClient();
+            const success = await this.apiService.deregisterClient();
             
-            if (response.success) {
-                this.isRegistered = false;
+            if (success) {
                 this.log('info', 'Client deregistered successfully');
                 this.debugLog('api', 'Client deregistration successful', { clientId: API_CONFIG.CLIENT_ID });
             } else {
-                this.log('error', `Failed to deregister client: ${response.error}`, { status: response.status });
+                this.log('error', 'Failed to deregister client');
             }
         } catch (error) {
             this.log('error', `Client deregistration error: ${error.message}`);
@@ -323,14 +300,10 @@ class MiraDesktop {
      * Uses ApiService for proper error handling and response management
      */
     async startListening() {
-        if (!this.apiService) {
-            throw new Error(ERROR_MESSAGES.BACKEND.SERVICE_UNAVAILABLE);
-        }
-
         try {
-            const response = await this.apiService.enableService();
+            const success = await this.apiService.enableService();
 
-            if (response.success) {
+            if (success) {
                 await this.startAudioCapture();
                 this.isListening = true;
                 this.updateListeningUI(true);
@@ -341,8 +314,8 @@ class MiraDesktop {
                     vadInitialized: !!this.micVAD
                 });
             } else {
-                this.log('error', `Failed to enable backend service: ${response.error}`, { status: response.status });
-                throw new Error(`Failed to enable listening: ${response.status}`);
+                this.log('error', 'Failed to enable backend service');
+                throw new Error('Failed to enable listening');
             }
         } catch (error) {
             this.log('error', 'Error starting listening', error);
@@ -363,12 +336,9 @@ class MiraDesktop {
             await this.stopAudioCapture();
 
             /** Send disable request to backend using ApiService */
-            let backendStopResult = null;
-            if (this.apiService) {
-                backendStopResult = await this.apiService.disableService();
-            }
+            const success = await this.apiService.disableService();
             
-            if (backendStopResult && backendStopResult.success) {
+            if (success) {
                 /** Update states only after successful backend confirmation */
                 this.isListening = false;
                 this.updateListeningUI(false);
@@ -901,15 +871,15 @@ Debug Shortcuts:
 
         try {
             const startTime = Date.now();
-            const response = await this.apiService.healthCheck();
+            const healthData = await this.apiService.healthCheck();
             const duration = Date.now() - startTime;
 
-            if (response.success) {
-                this.log('info', `Backend connection test successful (${duration}ms)`, response.data);
+            if (healthData) {
+                this.log('info', `Backend connection test successful (${duration}ms)`, healthData);
                 this.showMessage(`Backend connection OK (${duration}ms)`, 'info');
             } else {
-                this.log('error', `Backend connection test failed: ${response.error}`);
-                this.showMessage(`Backend test failed: ${response.status}`, 'error');
+                this.log('error', 'Backend connection test failed');
+                this.showMessage('Backend test failed', 'error');
             }
         } catch (error) {
             this.log('error', 'Backend connection test error', error);
@@ -1128,9 +1098,9 @@ Debug Shortcuts:
             }
 
             /** Use ApiService to register interaction */
-            const response = await this.apiService.registerInteraction(audioBytes.buffer, 'wav');
+            const interactionData = await this.apiService.registerInteraction(audioBytes.buffer, 'wav');
 
-            if (response.success) {
+            if (interactionData) {
                 this.audioProcessingStats.successfulRequests++;
                 this.audioProcessingStats.totalAudioSent++;
                 this.audioProcessingStats.totalAudioBytes += audioBytes.length;
@@ -1141,12 +1111,12 @@ Debug Shortcuts:
                 this.debugLog('audio', 'Audio interaction registered successfully', {
                     audioLength: audioFloat32Array.length,
                     audioBytes: audioBytes.length,
-                    interactionData: response.data
+                    interactionData: interactionData
                 });
             } else {
                 this.audioProcessingStats.failedRequests++;
-                const errorMessage = `Audio processing failed: ${response.error}`;
-                this.log('error', errorMessage, { status: response.status });
+                const errorMessage = 'Audio processing failed';
+                this.log('error', errorMessage);
 
                 if (response.status === 404) {
                     this.showMessage('Backend endpoint not found. Please check if the backend is running correctly.', 'error');
@@ -1309,30 +1279,26 @@ Debug Shortcuts:
 
         console.log(`interactions: ${interactions}`);
 
-        interactions.forEach((interaction) => {
+        for (const interaction of interactions) {
             const existingTranscription = this.transcriptions.find(t => String(t.id) === String(interaction));
             try {
                 if (!existingTranscription) {
                     this.log('info', `Adding new transcription: ${interaction}`);
 
-                    if (this.apiService) {
-                        this.apiService.getInteraction(interaction)
-                            .then(response => {
-                                if (response.success && response.data) {
-                                    this.addTranscriptionFromInteraction(response.data);
-                                } else {
-                                    this.log('error', `Failed to fetch interaction ${interaction}`, { error: response.error, status: response.status });
-                                }
-                            })
-                            .catch(error => {
-                                this.log('error', 'Error fetching interaction', error);
-                            });
-                    }
+                    this.apiService.getInteraction(interaction).then(interactionData => {
+                        if (interactionData) {
+                            this.addTranscriptionFromInteraction(interactionData);
+                        } else {
+                            this.log('error', `Failed to fetch interaction ${interaction}`);
+                        }
+                    }).catch(error => {
+                        this.log('error', 'Error fetching transcriptions', error);
+                    });
                 }
             } catch (error) {
                 this.log('error', 'Error fetching transcriptions', error);
             }
-        });
+        }
     }
 
     async addTranscriptionFromInteraction(interaction) {
@@ -1552,15 +1518,6 @@ Debug Shortcuts:
         });
     }
 
-    startConnectionCheck() {
-        this.checkConnection();
-
-        this.connectionCheckInterval = setInterval(() => {
-            this.checkConnection();
-
-        }, 1000);
-    }
-
     async cleanup() {
         try {
             /** Stop recording first */
@@ -1568,19 +1525,14 @@ Debug Shortcuts:
                 await this.stopAudioCapture();
             }
 
-            /** Clear intervals */
-            if (this.connectionCheckInterval) {
-                clearInterval(this.connectionCheckInterval);
-                this.connectionCheckInterval = null;
-            }
-
+            /** Clear transcription interval */
             if (this.transcriptionInterval) {
                 clearInterval(this.transcriptionInterval);
                 this.transcriptionInterval = null;
             }
 
             /** Stop listening service and deregister from backend */
-            if (this.isRegistered) {
+            if (this.apiService.isRegistered) {
                 try {
                     await this.deregisterClient();
                     
@@ -1590,6 +1542,11 @@ Debug Shortcuts:
                 } catch (error) {
                     this.log('error', 'Error during cleanup deregistration', error);
                 }
+            }
+
+            /** Clean up API service */
+            if (this.apiService) {
+                this.apiService.destroy();
             }
 
             /** Final state reset */
@@ -1615,17 +1572,10 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-        window.addEventListener('beforeunload', async () => {
-        if (window.miraApp && window.miraApp.isRegistered && !window.miraApp._deregistrationAttempted) {
-            if (window.miraApp.apiService) {
-                /** Use ApiService if available (fire and forget for beforeunload) */
-                window.miraApp.apiService.deregisterClient().catch(() => {});
-            } else {
-                /** Fallback to direct fetch for backwards compatibility */
-                const url = `${window.miraApp.baseUrl}/service/client/deregister/${encodeURIComponent(API_CONFIG.CLIENT_ID)}`;
-                fetch(url, { method: 'DELETE' }).catch(() => {});
-            }
-            window.miraApp._deregistrationAttempted = true;
+    window.addEventListener('beforeunload', async () => {
+        if (window.miraApp && window.miraApp.apiService.isRegistered) {
+            /** Use ApiService for deregistration (fire and forget for beforeunload) */
+            window.miraApp.apiService.deregisterClient().catch(() => {});
         }
     });
 
