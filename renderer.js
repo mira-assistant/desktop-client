@@ -1383,12 +1383,12 @@ class MiraDesktop {
         this.notificationContainer.id = 'notificationContainer';
         this.notificationContainer.style.cssText = `
             position: fixed;
-            top: 20px;
+            bottom: 20px;
             right: 20px;
             z-index: 10000;
             pointer-events: none;
             display: flex;
-            flex-direction: column;
+            flex-direction: column-reverse;
             gap: 8px;
         `;
         document.body.appendChild(this.notificationContainer);
