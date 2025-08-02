@@ -2,6 +2,129 @@ import { API_CONFIG, AUDIO_CONFIG, UI_CONFIG, DEBUG_CONFIG, ERROR_MESSAGES, SUCC
 import { ApiService } from './api.js';
 
 /**
+ * TooltipManager - Manages custom tooltips with edge detection
+ */
+class TooltipManager {
+    constructor() {
+        this.currentTooltip = null;
+        this.showTimeout = null;
+        this.hideTimeout = null;
+    }
+
+    /**
+     * Show tooltip for an element
+     * @param {HTMLElement} element - Target element
+     * @param {string} text - Tooltip text
+     * @param {number} delay - Delay before showing in ms
+     */
+    showTooltip(element, text, delay = 200) {
+        this.hideTooltip(); // Clear any existing tooltip
+
+        this.showTimeout = setTimeout(() => {
+            const tooltip = document.createElement('div');
+            tooltip.className = 'custom-tooltip';
+            tooltip.textContent = text;
+            
+            // Add to body temporarily to measure
+            document.body.appendChild(tooltip);
+            
+            // Get element and tooltip dimensions
+            const elementRect = element.getBoundingClientRect();
+            const tooltipRect = tooltip.getBoundingClientRect();
+            const viewportWidth = window.innerWidth;
+            const viewportHeight = window.innerHeight;
+            
+            let position = 'bottom'; // default position
+            let left = elementRect.left + elementRect.width / 2 - tooltipRect.width / 2;
+            let top = elementRect.bottom + 8;
+            
+            // Edge detection for horizontal positioning
+            if (left < 8) {
+                left = 8;
+            } else if (left + tooltipRect.width > viewportWidth - 8) {
+                left = viewportWidth - tooltipRect.width - 8;
+            }
+            
+            // Edge detection for vertical positioning
+            if (top + tooltipRect.height > viewportHeight - 8) {
+                // Position above element instead
+                position = 'top';
+                top = elementRect.top - tooltipRect.height - 8;
+                
+                // If still doesn't fit, try side positioning
+                if (top < 8) {
+                    top = elementRect.top + elementRect.height / 2 - tooltipRect.height / 2;
+                    
+                    if (elementRect.left > viewportWidth / 2) {
+                        // Position to the left
+                        position = 'left';
+                        left = elementRect.left - tooltipRect.width - 8;
+                    } else {
+                        // Position to the right
+                        position = 'right';
+                        left = elementRect.right + 8;
+                    }
+                }
+            }
+            
+            // Apply positioning
+            tooltip.style.left = `${left}px`;
+            tooltip.style.top = `${top}px`;
+            tooltip.className = `custom-tooltip ${position}`;
+            
+            // Show tooltip with animation
+            requestAnimationFrame(() => {
+                tooltip.classList.add('show');
+            });
+            
+            this.currentTooltip = tooltip;
+        }, delay);
+    }
+
+    /**
+     * Hide current tooltip
+     */
+    hideTooltip() {
+        if (this.showTimeout) {
+            clearTimeout(this.showTimeout);
+            this.showTimeout = null;
+        }
+
+        if (this.currentTooltip) {
+            const tooltip = this.currentTooltip;
+            tooltip.classList.remove('show');
+            
+            // Remove after animation completes
+            setTimeout(() => {
+                if (tooltip.parentNode) {
+                    tooltip.parentNode.removeChild(tooltip);
+                }
+            }, 200);
+            
+            this.currentTooltip = null;
+        }
+    }
+
+    /**
+     * Setup tooltip for an element
+     * @param {HTMLElement} element - Target element
+     * @param {function} getTooltipText - Function that returns tooltip text
+     */
+    setupTooltip(element, getTooltipText) {
+        element.addEventListener('mouseenter', () => {
+            const text = getTooltipText();
+            if (text) {
+                this.showTooltip(element, text);
+            }
+        });
+
+        element.addEventListener('mouseleave', () => {
+            this.hideTooltip();
+        });
+    }
+}
+
+/**
  * MiraDesktop - Main application class for the Mira Desktop Client
  * Handles audio recording, interaction, and backend communication
  */
@@ -12,6 +135,9 @@ class MiraDesktop {
     constructor() {
         /** Initialize API service that manages its own connection */
         this.apiService = new ApiService();
+
+        /** Initialize tooltip manager */
+        this.tooltipManager = new TooltipManager();
 
         /** Local state (not available via API service) */
         this.isListening = false;
@@ -106,6 +232,18 @@ class MiraDesktop {
         this.retryButton = document.getElementById('retryButton');
         this.rippleEffect = document.getElementById('rippleEffect');
         this.clientNameInput = document.getElementById('clientNameInput');
+
+        // Setup custom tooltip for status indicator
+        const statusIndicator = document.getElementById('statusIndicator');
+        if (statusIndicator) {
+            this.tooltipManager.setupTooltip(statusIndicator, () => {
+                if (this.apiService.isConnected && this.apiService.baseUrl) {
+                    return `Backend URL: ${this.apiService.baseUrl}`;
+                } else {
+                    return 'Not connected to backend';
+                }
+            });
+        }
     }
 
     /**
@@ -1115,24 +1253,12 @@ class MiraDesktop {
             const connectedHost = [...API_CONFIG.BASE_URLS.entries()].find(([, url]) => url === this.apiService.baseUrl)?.[0];
             this.statusText.textContent = 'Connected to ' + (connectedHost || this.apiService.baseUrl || 'unknown server');
             
-            // Add tooltip with full backend URL
-            const statusIndicator = document.getElementById('statusIndicator');
-            if (statusIndicator && this.apiService.baseUrl) {
-                statusIndicator.title = `Backend URL: ${this.apiService.baseUrl}`;
-            }
-            
             this.micButton.disabled = false;
         }
 
         else {
             this.statusDot.className = 'status-dot';
             this.statusText.textContent = 'Disconnected';
-            
-            // Clear tooltip when disconnected
-            const statusIndicator = document.getElementById('statusIndicator');
-            if (statusIndicator) {
-                statusIndicator.title = 'Not connected to backend';
-            }
             
             this.micButton.disabled = true;
             this.isListening = false;

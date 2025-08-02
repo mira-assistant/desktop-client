@@ -654,6 +654,70 @@ body {
     background: #66ffcc;
 }
 
+/* Custom Tooltip */
+.custom-tooltip {
+    position: absolute;
+    background: #1f2937;
+    color: white;
+    padding: 8px 12px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 500;
+    white-space: nowrap;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    z-index: 1000;
+    opacity: 0;
+    transform: translateY(4px);
+    transition: opacity 0.2s ease, transform 0.2s ease;
+    pointer-events: none;
+}
+
+.custom-tooltip.show {
+    opacity: 1;
+    transform: translateY(0);
+}
+
+.custom-tooltip::after {
+    content: '';
+    position: absolute;
+    top: -4px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 0;
+    height: 0;
+    border-left: 4px solid transparent;
+    border-right: 4px solid transparent;
+    border-bottom: 4px solid #1f2937;
+}
+
+.custom-tooltip.bottom::after {
+    top: auto;
+    bottom: -4px;
+    border-bottom: none;
+    border-top: 4px solid #1f2937;
+}
+
+.custom-tooltip.left::after {
+    top: 50%;
+    left: auto;
+    right: -4px;
+    transform: translateY(-50%);
+    border-left: 4px solid #1f2937;
+    border-right: none;
+    border-top: 4px solid transparent;
+    border-bottom: 4px solid transparent;
+}
+
+.custom-tooltip.right::after {
+    top: 50%;
+    left: -4px;
+    transform: translateY(-50%);
+    border-right: 4px solid #1f2937;
+    border-left: none;
+    border-top: 4px solid transparent;
+    border-bottom: 4px solid transparent;
+}
+
 /* Responsive design */
 @media (max-width: 1024px) {
     .main-content {
