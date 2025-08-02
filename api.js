@@ -262,12 +262,51 @@ export class ApiService extends EventTarget {
     }
 
     /**
+     * Get client IP address
+     * @returns {string} Client IP address
+     */
+    getClientIpAddress() {
+        if (typeof require !== 'undefined') {
+            // Node.js environment (Electron main/preload)
+            try {
+                const os = require('os');
+                const networkInterfaces = os.networkInterfaces();
+                
+                // Look for non-internal IPv4 interfaces first
+                for (const interfaceName in networkInterfaces) {
+                    const interfaces = networkInterfaces[interfaceName];
+                    for (const iface of interfaces) {
+                        if (iface.family === 'IPv4' && !iface.internal) {
+                            return iface.address;
+                        }
+                    }
+                }
+                
+                // Fallback to localhost if no external interface found
+                return '127.0.0.1';
+            } catch (error) {
+                console.warn('Failed to get IP address:', error);
+                return '127.0.0.1';
+            }
+        }
+        
+        // Browser environment fallback
+        return '127.0.0.1';
+    }
+
+    /**
      * Register client with backend
      * @returns {Promise<boolean>} True if registration successful
      */
     async registerClient() {
         const endpoint = `${API_ENDPOINTS.CLIENT_REGISTER}/${encodeURIComponent(this.clientId)}`;
-        const response = await this.makeRequest(endpoint, { method: 'POST' });
+        const clientIp = this.getClientIpAddress();
+        
+        const response = await this.makeRequest(endpoint, { 
+            method: 'POST',
+            body: JSON.stringify({ ip_address: clientIp })
+        });
+        
         if (response.success) {
             this.isRegistered = true;
             return true;

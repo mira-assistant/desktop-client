@@ -377,4 +377,56 @@ describe('ApiService', () => {
             expect(apiService.clientId).toBe(currentId);
         });
     });
+
+    describe('Client Registration with IP Address', () => {
+        test('should get client IP address', () => {
+            const ip = apiService.getClientIpAddress();
+            
+            expect(ip).toBeDefined();
+            expect(typeof ip).toBe('string');
+            // Should be a valid IP format (basic check)
+            expect(ip).toMatch(/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/);
+        });
+
+        test('should register client with IP address', async () => {
+            fetch.mockResolvedValueOnce({
+                ok: true,
+                json: () => Promise.resolve({})
+            });
+
+            const result = await apiService.registerClient();
+
+            expect(result).toBe(true);
+            expect(fetch).toHaveBeenCalledWith(
+                expect.stringContaining('/service/client/register/desktop-client'),
+                expect.objectContaining({
+                    method: 'POST',
+                    body: expect.stringContaining('ip_address'),
+                    headers: expect.objectContaining({
+                        'Content-Type': 'application/json'
+                    })
+                })
+            );
+
+            // Verify the IP address is included in the request body
+            const lastCall = fetch.mock.calls[fetch.mock.calls.length - 1];
+            const requestBody = JSON.parse(lastCall[1].body);
+            expect(requestBody).toHaveProperty('ip_address');
+            expect(typeof requestBody.ip_address).toBe('string');
+        });
+
+        test('should handle registration failure gracefully', async () => {
+            fetch.mockResolvedValueOnce({
+                ok: false,
+                status: 500,
+                statusText: 'Internal Server Error',
+                json: () => Promise.resolve({})
+            });
+
+            const result = await apiService.registerClient();
+
+            expect(result).toBe(false);
+            expect(apiService.isRegistered).toBe(false);
+        });
+    });
 });

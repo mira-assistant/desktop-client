@@ -1,6 +1,6 @@
 {
   "name": "mira-desktop",
-  "version": "4.2.0",
+  "version": "4.3.0",
   "description": "Mira Desktop - Cross-platform voice interaction application",
   "main": "main.js",
   "type": "commonjs",
