@@ -27,6 +27,10 @@ class MiraDesktop {
         this.personIndexMap = new Map();
         this.nextPersonIndex = 0;
 
+        /** Notification management */
+        this.activeNotifications = [];
+        this.notificationContainer = null;
+
         /** Audio capture properties for VAD-based recording */
         this.micVAD = null;
         this.isRecording = false;
@@ -45,6 +49,9 @@ class MiraDesktop {
 
         /** Initialize connection banner state - start as disconnected */
         this.showConnectionBanner();
+
+        /** Initialize notification container */
+        this.initializeNotificationContainer();
     }
 
     /**
@@ -1368,6 +1375,25 @@ class MiraDesktop {
         }
     }
 
+    /**
+     * Initialize notification container for stacked notifications
+     */
+    initializeNotificationContainer() {
+        this.notificationContainer = document.createElement('div');
+        this.notificationContainer.id = 'notificationContainer';
+        this.notificationContainer.style.cssText = `
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 10000;
+            pointer-events: none;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        `;
+        document.body.appendChild(this.notificationContainer);
+    }
+
     showMessage(message, type = 'info') {
         console.log('Message:', message);
 
@@ -1375,56 +1401,70 @@ class MiraDesktop {
         const toast = document.createElement('div');
         toast.className = `toast toast-${type}`;
         toast.style.cssText = `
-            position: fixed;
-            top: 20px;
-            right: 20px;
+            position: relative;
             max-width: 400px;
             padding: 12px 16px;
             background: ${type === 'error' ? '#ff4444' : type === 'warning' ? '#ffaa00' : '#00aa44'};
             color: white;
             border-radius: 8px;
             box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-            z-index: 10000;
             font-size: 14px;
             font-weight: 500;
             opacity: 0;
             transform: translateX(100%);
             transition: all 0.3s ease;
             word-wrap: break-word;
+            pointer-events: auto;
+            cursor: pointer;
         `;
 
         toast.textContent = message;
-        document.body.appendChild(toast);
+        
+        /** Add to notification container instead of body */
+        this.notificationContainer.appendChild(toast);
+        this.activeNotifications.push(toast);
 
+        /** Animate in */
         setTimeout(() => {
             toast.style.opacity = '1';
             toast.style.transform = 'translateX(0)';
         }, 10);
 
-
+        /** Auto-remove non-error notifications */
         if (type !== 'error') {
             const duration = Math.max(3000, Math.min(8000, message.length * 50));
             setTimeout(() => {
-                toast.style.opacity = '0';
-                toast.style.transform = 'translateX(100%)';
-                setTimeout(() => {
-                    if (toast.parentNode) {
-                        toast.parentNode.removeChild(toast);
-                    }
-                }, 300);
+                this.removeNotification(toast);
             }, duration);
         }
 
-
+        /** Click to dismiss */
         toast.addEventListener('click', () => {
-            toast.style.opacity = '0';
-            toast.style.transform = 'translateX(100%)';
-            setTimeout(() => {
-                if (toast.parentNode) {
-                    toast.parentNode.removeChild(toast);
-                }
-            }, 300);
+            this.removeNotification(toast);
         });
+    }
+
+    /**
+     * Remove a notification and update the stack
+     * @param {HTMLElement} toast - The notification element to remove
+     */
+    removeNotification(toast) {
+        if (!toast.parentNode) return;
+
+        toast.style.opacity = '0';
+        toast.style.transform = 'translateX(100%)';
+        
+        setTimeout(() => {
+            if (toast.parentNode) {
+                toast.parentNode.removeChild(toast);
+                
+                /** Remove from active notifications array */
+                const index = this.activeNotifications.indexOf(toast);
+                if (index > -1) {
+                    this.activeNotifications.splice(index, 1);
+                }
+            }
+        }, 300);
     }
 
     async cleanup() {
