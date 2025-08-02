@@ -379,16 +379,21 @@ describe('ApiService', () => {
     });
 
     describe('Client Registration with IP Address', () => {
-        test('should get client IP address', () => {
-            const ip = apiService.getClientIpAddress();
+        test('should get client IP addresses', () => {
+            const ipAddresses = apiService.getClientIpAddress();
             
-            expect(ip).toBeDefined();
-            expect(typeof ip).toBe('string');
-            // Should be a valid IP format (basic check)
-            expect(ip).toMatch(/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/);
+            expect(ipAddresses).toBeDefined();
+            expect(typeof ipAddresses).toBe('object');
+            expect(ipAddresses).toHaveProperty('local');
+            expect(ipAddresses).toHaveProperty('external');
+            expect(typeof ipAddresses.local).toBe('string');
+            expect(typeof ipAddresses.external).toBe('string');
+            // Should be valid IP formats (basic check)
+            expect(ipAddresses.local).toMatch(/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/);
+            expect(ipAddresses.external).toMatch(/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/);
         });
 
-        test('should register client with IP address', async () => {
+        test('should register client with both IP addresses', async () => {
             fetch.mockResolvedValueOnce({
                 ok: true,
                 json: () => Promise.resolve({})
@@ -401,18 +406,20 @@ describe('ApiService', () => {
                 expect.stringContaining('/service/client/register/desktop-client'),
                 expect.objectContaining({
                     method: 'POST',
-                    body: expect.stringContaining('ip_address'),
+                    body: expect.stringContaining('local_ip_address'),
                     headers: expect.objectContaining({
                         'Content-Type': 'application/json'
                     })
                 })
             );
 
-            // Verify the IP address is included in the request body
+            // Verify both IP addresses are included in the request body
             const lastCall = fetch.mock.calls[fetch.mock.calls.length - 1];
             const requestBody = JSON.parse(lastCall[1].body);
-            expect(requestBody).toHaveProperty('ip_address');
-            expect(typeof requestBody.ip_address).toBe('string');
+            expect(requestBody).toHaveProperty('local_ip_address');
+            expect(requestBody).toHaveProperty('external_ip_address');
+            expect(typeof requestBody.local_ip_address).toBe('string');
+            expect(typeof requestBody.external_ip_address).toBe('string');
         });
 
         test('should handle registration failure gracefully', async () => {
