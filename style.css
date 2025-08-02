@@ -250,6 +250,10 @@ body {
     opacity: 1;
 }
 
+.mic-button:disabled .red-ripple-waves {
+    opacity: 0;
+}
+
 
 .red-ripple-wave {
     position: absolute;
