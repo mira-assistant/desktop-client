@@ -1114,12 +1114,26 @@ class MiraDesktop {
             this.statusDot.className = 'status-dot connected';
             const connectedHost = [...API_CONFIG.BASE_URLS.entries()].find(([, url]) => url === this.apiService.baseUrl)?.[0];
             this.statusText.textContent = 'Connected to ' + (connectedHost || this.apiService.baseUrl || 'unknown server');
+            
+            // Add tooltip with full backend URL
+            const statusIndicator = document.getElementById('statusIndicator');
+            if (statusIndicator && this.apiService.baseUrl) {
+                statusIndicator.title = `Backend URL: ${this.apiService.baseUrl}`;
+            }
+            
             this.micButton.disabled = false;
         }
 
         else {
             this.statusDot.className = 'status-dot';
             this.statusText.textContent = 'Disconnected';
+            
+            // Clear tooltip when disconnected
+            const statusIndicator = document.getElementById('statusIndicator');
+            if (statusIndicator) {
+                statusIndicator.title = 'Not connected to backend';
+            }
+            
             this.micButton.disabled = true;
             this.isListening = false;
             this.updateListeningUI(false);
@@ -1391,6 +1405,15 @@ class MiraDesktop {
             flex-direction: column-reverse;
             gap: 8px;
         `;
+        
+        /** Add CSS for smooth repositioning of notifications */
+        const style = document.createElement('style');
+        style.textContent = `
+            #notificationContainer > * {
+                transition: all 0.3s ease !important;
+            }
+        `;
+        document.head.appendChild(style);
         document.body.appendChild(this.notificationContainer);
     }
 
@@ -1412,7 +1435,7 @@ class MiraDesktop {
             font-weight: 500;
             opacity: 0;
             transform: translateX(100%);
-            transition: all 0.3s ease;
+            transition: all 0.3s ease, transform 0.3s ease, opacity 0.3s ease;
             word-wrap: break-word;
             pointer-events: auto;
             cursor: pointer;
