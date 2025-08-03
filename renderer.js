@@ -159,7 +159,7 @@ class MiraDesktop {
 
         this.statusIndicator.addEventListener('mouseenter', () => {
             if (this.apiService.isConnected && this.apiService.baseUrl) {
-                this.toolTip.textContent = `Backend URL: ${this.apiService.baseUrl}`;
+                this.toolTip.textContent = `Backend URL: ${this.apiService.baseUrl}/`;
             } else {
                 this.toolTip.textContent = 'Not connected to backend';
             }
