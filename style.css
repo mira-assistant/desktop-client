@@ -172,8 +172,8 @@ body {
     transform: scale(1.05);
     /* Blue shadow when hovering over start listening button */
     box-shadow: 0 15px 40px rgba(0, 255, 136, 0.7),
-                0 0 40px rgba(0, 255, 136, 0.5),
-                0 0 80px rgba(0, 255, 136, 0.3);
+        0 0 40px rgba(0, 255, 136, 0.5),
+        0 0 80px rgba(0, 255, 136, 0.3);
 }
 
 .mic-button:active:not(:disabled) {
@@ -191,16 +191,16 @@ body {
     background: linear-gradient(135deg, #ff4444 0%, #e53e3e 100%);
     /* Stop listening button: red shadow when not hovered */
     box-shadow: 0 10px 30px rgba(255, 68, 68, 0.6),
-                0 0 30px rgba(255, 68, 68, 0.4),
-                0 0 60px rgba(255, 68, 68, 0.2);
+        0 0 30px rgba(255, 68, 68, 0.4),
+        0 0 60px rgba(255, 68, 68, 0.2);
 }
 
 .mic-button.listening:hover:not(:disabled) {
     transform: scale(1.05);
     /* Red shadow when hovering over stop listening button */
     box-shadow: 0 15px 40px rgba(255, 68, 68, 0.7),
-                0 0 40px rgba(255, 68, 68, 0.5),
-                0 0 80px rgba(255, 68, 68, 0.3);
+        0 0 40px rgba(255, 68, 68, 0.5),
+        0 0 80px rgba(255, 68, 68, 0.3);
 }
 
 .mic-button-inner {
@@ -572,10 +572,13 @@ body {
 
 /* Animations */
 @keyframes pulse {
-    0%, 100% {
+
+    0%,
+    100% {
         opacity: 1;
         transform: scale(1);
     }
+
     50% {
         opacity: 0.5;
         transform: scale(0.85);
@@ -590,10 +593,12 @@ body {
         border-width: 3px;
         border-color: rgba(255, 68, 68, 1);
     }
+
     50% {
         opacity: 0.5;
         border-color: rgba(255, 68, 68, 0.5);
     }
+
     100% {
         width: 140%;
         height: 140%;
@@ -609,6 +614,7 @@ body {
         height: 160px;
         opacity: 1;
     }
+
     100% {
         width: 240px;
         height: 240px;
@@ -621,6 +627,7 @@ body {
         opacity: 0;
         transform: translateY(20px);
     }
+
     to {
         opacity: 1;
         transform: translateY(0);
@@ -631,6 +638,7 @@ body {
     from {
         transform: translateY(-100%);
     }
+
     to {
         transform: translateY(0);
     }
@@ -677,7 +685,7 @@ body {
     transform: translateY(0);
 }
 
-.custom-tooltip::after {
+.custom-tooltip::before {
     content: '';
     position: absolute;
     top: -4px;
@@ -688,34 +696,6 @@ body {
     border-left: 4px solid transparent;
     border-right: 4px solid transparent;
     border-bottom: 4px solid #1f2937;
-}
-
-.custom-tooltip.bottom::after {
-    top: auto;
-    bottom: -4px;
-    border-bottom: none;
-    border-top: 4px solid #1f2937;
-}
-
-.custom-tooltip.left::after {
-    top: 50%;
-    left: auto;
-    right: -4px;
-    transform: translateY(-50%);
-    border-left: 4px solid #1f2937;
-    border-right: none;
-    border-top: 4px solid transparent;
-    border-bottom: 4px solid transparent;
-}
-
-.custom-tooltip.right::after {
-    top: 50%;
-    left: -4px;
-    transform: translateY(-50%);
-    border-right: 4px solid #1f2937;
-    border-left: none;
-    border-top: 4px solid transparent;
-    border-bottom: 4px solid transparent;
 }
 
 /* Responsive design */
@@ -762,6 +742,7 @@ body {
 }
 
 @media (max-width: 768px) {
+
     /* Scale down fonts for mobile */
     .app-title {
         font-size: 18px;
@@ -793,6 +774,7 @@ body {
 }
 
 @media (max-width: 480px) {
+
     /* Scale down fonts for small mobile */
     .app-title {
         font-size: 16px;

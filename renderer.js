@@ -2,129 +2,6 @@ import { API_CONFIG, AUDIO_CONFIG, UI_CONFIG, DEBUG_CONFIG, ERROR_MESSAGES, SUCC
 import { ApiService } from './api.js';
 
 /**
- * TooltipManager - Manages custom tooltips with edge detection
- */
-class TooltipManager {
-    constructor() {
-        this.currentTooltip = null;
-        this.showTimeout = null;
-        this.hideTimeout = null;
-    }
-
-    /**
-     * Show tooltip for an element
-     * @param {HTMLElement} element - Target element
-     * @param {string} text - Tooltip text
-     * @param {number} delay - Delay before showing in ms
-     */
-    showTooltip(element, text, delay = 200) {
-        this.hideTooltip(); // Clear any existing tooltip
-
-        this.showTimeout = setTimeout(() => {
-            const tooltip = document.createElement('div');
-            tooltip.className = 'custom-tooltip';
-            tooltip.textContent = text;
-            
-            // Add to body temporarily to measure
-            document.body.appendChild(tooltip);
-            
-            // Get element and tooltip dimensions
-            const elementRect = element.getBoundingClientRect();
-            const tooltipRect = tooltip.getBoundingClientRect();
-            const viewportWidth = window.innerWidth;
-            const viewportHeight = window.innerHeight;
-            
-            let position = 'bottom'; // default position
-            let left = elementRect.left + elementRect.width / 2 - tooltipRect.width / 2;
-            let top = elementRect.bottom + 8;
-            
-            // Edge detection for horizontal positioning
-            if (left < 8) {
-                left = 8;
-            } else if (left + tooltipRect.width > viewportWidth - 8) {
-                left = viewportWidth - tooltipRect.width - 8;
-            }
-            
-            // Edge detection for vertical positioning
-            if (top + tooltipRect.height > viewportHeight - 8) {
-                // Position above element instead
-                position = 'top';
-                top = elementRect.top - tooltipRect.height - 8;
-                
-                // If still doesn't fit, try side positioning
-                if (top < 8) {
-                    top = elementRect.top + elementRect.height / 2 - tooltipRect.height / 2;
-                    
-                    if (elementRect.left > viewportWidth / 2) {
-                        // Position to the left
-                        position = 'left';
-                        left = elementRect.left - tooltipRect.width - 8;
-                    } else {
-                        // Position to the right
-                        position = 'right';
-                        left = elementRect.right + 8;
-                    }
-                }
-            }
-            
-            // Apply positioning
-            tooltip.style.left = `${left}px`;
-            tooltip.style.top = `${top}px`;
-            tooltip.className = `custom-tooltip ${position}`;
-            
-            // Show tooltip with animation
-            requestAnimationFrame(() => {
-                tooltip.classList.add('show');
-            });
-            
-            this.currentTooltip = tooltip;
-        }, delay);
-    }
-
-    /**
-     * Hide current tooltip
-     */
-    hideTooltip() {
-        if (this.showTimeout) {
-            clearTimeout(this.showTimeout);
-            this.showTimeout = null;
-        }
-
-        if (this.currentTooltip) {
-            const tooltip = this.currentTooltip;
-            tooltip.classList.remove('show');
-            
-            // Remove after animation completes
-            setTimeout(() => {
-                if (tooltip.parentNode) {
-                    tooltip.parentNode.removeChild(tooltip);
-                }
-            }, 200);
-            
-            this.currentTooltip = null;
-        }
-    }
-
-    /**
-     * Setup tooltip for an element
-     * @param {HTMLElement} element - Target element
-     * @param {function} getTooltipText - Function that returns tooltip text
-     */
-    setupTooltip(element, getTooltipText) {
-        element.addEventListener('mouseenter', () => {
-            const text = getTooltipText();
-            if (text) {
-                this.showTooltip(element, text);
-            }
-        });
-
-        element.addEventListener('mouseleave', () => {
-            this.hideTooltip();
-        });
-    }
-}
-
-/**
  * MiraDesktop - Main application class for the Mira Desktop Client
  * Handles audio recording, interaction, and backend communication
  */
@@ -135,9 +12,6 @@ class MiraDesktop {
     constructor() {
         /** Initialize API service that manages its own connection */
         this.apiService = new ApiService();
-
-        /** Initialize tooltip manager */
-        this.tooltipManager = new TooltipManager();
 
         /** Local state (not available via API service) */
         this.isListening = false;
@@ -232,18 +106,8 @@ class MiraDesktop {
         this.retryButton = document.getElementById('retryButton');
         this.rippleEffect = document.getElementById('rippleEffect');
         this.clientNameInput = document.getElementById('clientNameInput');
-
-        // Setup custom tooltip for status indicator
-        const statusIndicator = document.getElementById('statusIndicator');
-        if (statusIndicator) {
-            this.tooltipManager.setupTooltip(statusIndicator, () => {
-                if (this.apiService.isConnected && this.apiService.baseUrl) {
-                    return `Backend URL: ${this.apiService.baseUrl}`;
-                } else {
-                    return 'Not connected to backend';
-                }
-            });
-        }
+        this.toolTip = document.getElementById('custom-tooltip');
+        this.statusIndicator = document.getElementById('statusIndicator');
     }
 
     /**
@@ -292,6 +156,32 @@ class MiraDesktop {
         this.micButton.addEventListener('click', () => this.toggleListening());
         this.clearButton.addEventListener('click', () => this.clearInteractions());
         this.retryButton.addEventListener('click', () => this.handleRetryConnection());
+
+        this.statusIndicator.addEventListener('mouseenter', () => {
+            if (this.apiService.isConnected && this.apiService.baseUrl) {
+                this.toolTip.textContent = `Backend URL: ${this.apiService.baseUrl}`;
+            } else {
+                this.toolTip.textContent = 'Not connected to backend';
+            }
+
+            const elementRect = this.statusIndicator.getBoundingClientRect();
+            const tooltipRect = this.toolTip.getBoundingClientRect();
+
+            let left = elementRect.left + elementRect.width / 2 - tooltipRect.width / 2;
+
+            this.toolTip.style.left = `${left}px`;
+            this.toolTip.style.top = `60px`;
+            this.toolTip.className = `custom-tooltip`;
+
+            requestAnimationFrame(() => {
+                this.toolTip.classList.add('show');
+            });
+        });
+
+        this.statusIndicator.addEventListener('mouseleave', () => {
+            this.toolTip.classList.remove('show');
+        });
+
         this.clientNameInput.addEventListener('keydown', (e) => {
             if (e.key === 'Enter') {
                 this.handleClientNameChange(e.target.value);
@@ -1252,14 +1142,14 @@ class MiraDesktop {
             this.statusDot.className = 'status-dot connected';
             const connectedHost = [...API_CONFIG.BASE_URLS.entries()].find(([, url]) => url === this.apiService.baseUrl)?.[0];
             this.statusText.textContent = 'Connected to ' + (connectedHost || this.apiService.baseUrl || 'unknown server');
-            
+
             this.micButton.disabled = false;
         }
 
         else {
             this.statusDot.className = 'status-dot';
             this.statusText.textContent = 'Disconnected';
-            
+
             this.micButton.disabled = true;
             this.isListening = false;
             this.updateListeningUI(false);
@@ -1531,7 +1421,7 @@ class MiraDesktop {
             flex-direction: column-reverse;
             gap: 8px;
         `;
-        
+
         /** Add CSS for smooth repositioning of notifications */
         const style = document.createElement('style');
         style.textContent = `
@@ -1568,7 +1458,7 @@ class MiraDesktop {
         `;
 
         toast.textContent = message;
-        
+
         /** Add to notification container instead of body */
         this.notificationContainer.appendChild(toast);
         this.activeNotifications.push(toast);
@@ -1602,11 +1492,11 @@ class MiraDesktop {
 
         toast.style.opacity = '0';
         toast.style.transform = 'translateX(100%)';
-        
+
         setTimeout(() => {
             if (toast.parentNode) {
                 toast.parentNode.removeChild(toast);
-                
+
                 /** Remove from active notifications array */
                 const index = this.activeNotifications.indexOf(toast);
                 if (index > -1) {
