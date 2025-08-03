@@ -27,6 +27,10 @@ class MiraDesktop {
         this.personIndexMap = new Map();
         this.nextPersonIndex = 0;
 
+        /** Notification management */
+        this.activeNotifications = [];
+        this.notificationContainer = null;
+
         /** Audio capture properties for VAD-based recording */
         this.micVAD = null;
         this.isRecording = false;
@@ -45,6 +49,9 @@ class MiraDesktop {
 
         /** Initialize connection banner state - start as disconnected */
         this.showConnectionBanner();
+
+        /** Initialize notification container */
+        this.initializeNotificationContainer();
     }
 
     /**
@@ -61,7 +68,9 @@ class MiraDesktop {
 
                 /** Log successful connection */
                 this.log('info', `Connected to ${hostName} at ${url}`);
-            } else {
+            }
+
+            else {
                 this.updateConnectionStatus(false);
                 this.showConnectionBanner();
 
@@ -97,6 +106,8 @@ class MiraDesktop {
         this.retryButton = document.getElementById('retryButton');
         this.rippleEffect = document.getElementById('rippleEffect');
         this.clientNameInput = document.getElementById('clientNameInput');
+        this.toolTip = document.getElementById('custom-tooltip');
+        this.statusIndicator = document.getElementById('statusIndicator');
     }
 
     /**
@@ -127,7 +138,9 @@ class MiraDesktop {
                     vadDestroyed: !this.micVAD
                 });
             }
-        } catch (error) {
+        }
+
+        catch (error) {
             this.log('error', 'Error in manageListeningState', error);
             /** Ensure cleanup on error */
             if (!enabled) {
@@ -143,6 +156,32 @@ class MiraDesktop {
         this.micButton.addEventListener('click', () => this.toggleListening());
         this.clearButton.addEventListener('click', () => this.clearInteractions());
         this.retryButton.addEventListener('click', () => this.handleRetryConnection());
+
+        this.statusIndicator.addEventListener('mouseenter', () => {
+            if (this.apiService.isConnected && this.apiService.baseUrl) {
+                this.toolTip.textContent = `Backend URL: ${this.apiService.baseUrl}/`;
+            } else {
+                this.toolTip.textContent = 'Not connected to backend';
+            }
+
+            const elementRect = this.statusIndicator.getBoundingClientRect();
+            const tooltipRect = this.toolTip.getBoundingClientRect();
+
+            let left = elementRect.left + elementRect.width / 2 - tooltipRect.width / 2;
+
+            this.toolTip.style.left = `${left}px`;
+            this.toolTip.style.top = `60px`;
+            this.toolTip.className = `custom-tooltip`;
+
+            requestAnimationFrame(() => {
+                this.toolTip.classList.add('show');
+            });
+        });
+
+        this.statusIndicator.addEventListener('mouseleave', () => {
+            this.toolTip.classList.remove('show');
+        });
+
         this.clientNameInput.addEventListener('keydown', (e) => {
             if (e.key === 'Enter') {
                 this.handleClientNameChange(e.target.value);
@@ -197,7 +236,9 @@ class MiraDesktop {
             setTimeout(() => {
                 this.clientNameInput.style.color = '';
             }, 2000);
-        } else {
+        }
+
+        else {
             /** Revert input on failure */
             this.clientNameInput.value = this.apiService.clientId;
             this.log('warn', 'Failed to update client name - reverted to previous name');
@@ -282,10 +323,14 @@ class MiraDesktop {
             if (success) {
                 this.log('info', SUCCESS_MESSAGES.REGISTRATION);
                 this.debugLog('api', 'Client registration successful', { clientId: API_CONFIG.CLIENT_ID });
-            } else {
+            }
+
+            else {
                 this.log('error', 'Failed to register client');
             }
-        } catch (error) {
+        }
+
+        catch (error) {
             this.log('error', `Client registration error: ${error.message}`);
         }
     }
@@ -306,10 +351,14 @@ class MiraDesktop {
             if (success) {
                 this.log('info', 'Client deregistered successfully');
                 this.debugLog('api', 'Client deregistration successful', { clientId: API_CONFIG.CLIENT_ID });
-            } else {
+            }
+
+            else {
                 this.log('error', 'Failed to deregister client');
             }
-        } catch (error) {
+        }
+
+        catch (error) {
             this.log('error', `Client deregistration error: ${error.message}`);
         }
     }
@@ -348,7 +397,9 @@ class MiraDesktop {
                 if (!success) {
                     throw new Error('Failed to send disable request to backend');
                 }
-            } else {
+            }
+
+            else {
                 /** Send enable request to backend - state management will handle audio start */
                 const success = await this.apiService.enableService();
 
@@ -359,7 +410,9 @@ class MiraDesktop {
 
             await waitTilAudioCaptureReady(this);
 
-        } catch (error) {
+        }
+
+        catch (error) {
             this.log('error', 'Error toggling listening', error);
 
             /** Determine user-friendly error message */
@@ -389,7 +442,9 @@ class MiraDesktop {
                 isRecording: this.isRecording
             });
 
-        } finally {
+        }
+
+        finally {
             this.micButton.disabled = false;
             this.updateListeningUI(this.isListening);
             this.isToggling = false;
@@ -484,10 +539,14 @@ class MiraDesktop {
                         /** Validate and optimize audio data before sending */
                         if (audio && audio.length > 0) {
                             this.processAndSendOptimizedAudio(audio);
-                        } else {
+                        }
+
+                        else {
                             this.updateVADStatus('waiting');
                         }
-                    } catch (err) {
+                    }
+
+                    catch (err) {
                         this.log('error', 'VAD error in onSpeechEnd callback', err);
                         this.updateVADStatus('waiting');
                     }
@@ -532,7 +591,9 @@ class MiraDesktop {
             await this.micVAD.start();
             this.isRecording = true;
             this.updateVADStatus('waiting');
-        } catch (error) {
+        }
+
+        catch (error) {
             this.log('error', 'Error starting VAD audio capture', error);
 
             let errorMessage = ERROR_MESSAGES.AUDIO.VAD_INIT_FAILED;
@@ -546,7 +607,9 @@ class MiraDesktop {
                 errorMessage = ERROR_MESSAGES.AUDIO.DEVICE_NOT_FOUND;
             } else if (error.message.includes('MicVAD')) {
                 errorMessage = 'Voice detection module is incomplete. Please refresh the page and try again.';
-            } else {
+            }
+
+            else {
                 errorMessage = `Voice detection error: ${error.message}`;
             }
 
@@ -559,7 +622,9 @@ class MiraDesktop {
 
             this.showMessage(errorMessage, 'error');
             throw error;
-        } finally {
+        }
+
+        finally {
             this.isTogglingAudioCapture = false;
         }
     }
@@ -585,7 +650,9 @@ class MiraDesktop {
                 try {
                     /** Call destroy method on VAD */
                     await this.micVAD.destroy();
-                } catch (vadError) {
+                }
+
+                catch (vadError) {
                     this.log('error', 'Error calling VAD.destroy()', vadError);
                     /** Continue with cleanup even if destroy fails */
                 }
@@ -604,7 +671,9 @@ class MiraDesktop {
             this.updateVADStatus('stopped');
             this.log('info', 'Audio capture stopped successfully');
 
-        } catch (error) {
+        }
+
+        catch (error) {
             this.log('error', 'Error stopping VAD audio capture', error);
 
             /** Force cleanup even if there are errors */
@@ -614,7 +683,9 @@ class MiraDesktop {
                 this.isRecording = false;
                 this.updateVADStatus('stopped');
                 this.log('info', 'Forced cleanup completed');
-            } catch (forceError) {
+            }
+
+            catch (forceError) {
                 this.log('error', 'Error during forced cleanup', forceError);
             }
 
@@ -628,7 +699,9 @@ class MiraDesktop {
             });
 
             /** Don't rethrow the error - we want to ensure cleanup happens */
-        } finally {
+        }
+
+        finally {
             this.isTogglingAudioCapture = false;
         }
     }
@@ -649,7 +722,9 @@ class MiraDesktop {
             /** Try to detect active streams by checking permissions */
             try {
                 await navigator.permissions.query({ name: 'microphone' });
-            } catch {
+            }
+
+            catch {
                 /** Ignore permission check errors - this is just a verification step */
             }
 
@@ -657,7 +732,9 @@ class MiraDesktop {
             /** We'll try to create a new temporary stream to verify microphone access is properly released */
             await this.verifyMicrophoneIsReleased();
 
-        } catch (error) {
+        }
+
+        catch (error) {
             console.error('Error during audio track cleanup:', error);
             /** Continue execution - this is a best-effort cleanup */
         }
@@ -683,7 +760,9 @@ class MiraDesktop {
                 });
             }
 
-        } catch (error) {
+        }
+
+        catch (error) {
             if (error.name === 'NotAllowedError') {
                 /** Expected if user has denied access */
             } else if (error.name === 'NotFoundError') {
@@ -794,11 +873,15 @@ class MiraDesktop {
             /** Step 6: Only send if audio quality is sufficient */
             if (finalAnalysis.snr > AUDIO_CONFIG.OPTIMIZATION.SIGNAL_THRESHOLD) {
                 await this.sendVADAudioToBackend(processedAudio);
-            } else {
+            }
+
+            else {
                 this.updateVADStatus('waiting');
             }
 
-        } catch (error) {
+        }
+
+        catch (error) {
             console.error('Error in audio optimization pipeline:', error);
             /** Fallback to original audio if processing fails */
             await this.sendVADAudioToBackend(audioFloat32Array);
@@ -870,7 +953,9 @@ class MiraDesktop {
                 /** Keep strong signals, apply gentle filtering to weak ones */
                 const gain = Math.min(1.0, sampleAbs / noiseThreshold);
                 result[i] = sample * gain;
-            } else {
+            }
+
+            else {
                 /** Aggressive reduction for likely noise */
                 result[i] = sample * 0.1;
             }
@@ -990,14 +1075,18 @@ class MiraDesktop {
                     audioBytes: audioBytes.length,
                     interactionData: interactionData
                 });
-            } else {
+            }
+
+            else {
                 this.audioProcessingStats.failedRequests++;
                 const errorMessage = 'Audio processing failed';
                 this.log('error', errorMessage);
                 this.showMessage('Failed to process audio. Please try again.', 'error');
             }
 
-        } catch (error) {
+        }
+
+        catch (error) {
             console.error('Error sending VAD audio to backend:', error);
 
             if (error.name === 'AbortError') {
@@ -1007,10 +1096,14 @@ class MiraDesktop {
             } else if (error.message.includes('Backend connection lost')) {
                 this.showMessage('Connection to backend lost. Reconnecting...');
                 this.checkConnection();
-            } else {
+            }
+
+            else {
                 this.showMessage('Error processing audio: ' + error.message, 'error');
             }
-        } finally {
+        }
+
+        finally {
             this.isProcessingAudio = false;
             if (this.isListening) {
                 this.updateVADStatus('waiting');
@@ -1034,7 +1127,9 @@ class MiraDesktop {
                 this.micStatusText.textContent = message;
             } else if (status === 'stopped') {
                 this.micStatusText.textContent = 'Click to start listening';
-            } else {
+            }
+
+            else {
                 this.micStatusText.textContent = 'Listening... Click to stop';
             }
         } else if (!this.isListening && status === 'stopped') {
@@ -1047,10 +1142,14 @@ class MiraDesktop {
             this.statusDot.className = 'status-dot connected';
             const connectedHost = [...API_CONFIG.BASE_URLS.entries()].find(([, url]) => url === this.apiService.baseUrl)?.[0];
             this.statusText.textContent = 'Connected to ' + (connectedHost || this.apiService.baseUrl || 'unknown server');
+
             this.micButton.disabled = false;
-        } else {
+        }
+
+        else {
             this.statusDot.className = 'status-dot';
             this.statusText.textContent = 'Disconnected';
+
             this.micButton.disabled = true;
             this.isListening = false;
             this.updateListeningUI(false);
@@ -1079,7 +1178,9 @@ class MiraDesktop {
                     <path d="M6 6h12v12H6z"/>
                 </svg>
             `;
-        } else {
+        }
+
+        else {
             this.micButton.classList.remove('listening');
             this.micStatusText.textContent = 'Click to start listening';
             this.micIcon.innerHTML = `
@@ -1100,14 +1201,18 @@ class MiraDesktop {
                     this.apiService.getInteraction(interaction).then(interactionData => {
                         if (interactionData) {
                             this.appendInteraction(interactionData);
-                        } else {
+                        }
+
+                        else {
                             this.log('error', `Failed to fetch interaction ${interaction}`);
                         }
                     }).catch(error => {
                         this.log('error', 'Error fetching interactions', error);
                     });
                 }
-            } catch (error) {
+            }
+
+            catch (error) {
                 this.log('error', 'Error fetching interactions', error);
             }
         }
@@ -1129,7 +1234,9 @@ class MiraDesktop {
                 minute: '2-digit',
                 second: '2-digit'
             });
-        } catch (error) {
+        }
+
+        catch (error) {
             this.log('warn', 'Error parsing timestamp', error);
             const dateObj = new Date(interaction.timestamp);
             timestamp = dateObj.toLocaleString(undefined, {
@@ -1154,7 +1261,9 @@ class MiraDesktop {
 
         if (person) {
             personData = person;
-        } else {
+        }
+
+        else {
             this.log('error', `Failed to fetch person ${interaction.speaker_id}`);
             /** Create a fallback person object */
             personData = { name: 'Unknown Person', id: interaction.speaker_id };
@@ -1235,11 +1344,15 @@ class MiraDesktop {
                     this.log('info', 'Cleared interaction from database', { interactionId: interaction.id });
                     deletedCount++;
                     return interaction.id;
-                } else {
+                }
+
+                else {
                     this.log('error', `Failed to clear database for interaction ${interaction.id}`);
                     return null;
                 }
-            } catch (err) {
+            }
+
+            catch (err) {
                 this.log('warn', `Failed to delete interaction ${interaction.id}`, err);
                 return null;
             }
@@ -1258,7 +1371,15 @@ class MiraDesktop {
             `;
         }
 
-        this.showMessage(`Cleared ${deletedCount} interactions from database`, 'info');
+
+        if (deletedCount > 0) {
+            this.interactionContent.scrollTop = this.interactionContent.scrollHeight;
+            this.showMessage(`Cleared ${deletedCount} interactions from database`, 'info');
+        }
+
+        else {
+            this.showMessage('No interactions to clear', 'info');
+        }
     }
 
 
@@ -1266,7 +1387,9 @@ class MiraDesktop {
         if (this.connectionBanner) {
             this.connectionBanner.style.display = 'block';
             this.debugLog('ui', 'Connection banner shown');
-        } else {
+        }
+
+        else {
             console.error('Connection banner element not found');
         }
     }
@@ -1275,9 +1398,39 @@ class MiraDesktop {
         if (this.connectionBanner) {
             this.connectionBanner.style.display = 'none';
             this.debugLog('ui', 'Connection banner hidden');
-        } else {
+        }
+
+        else {
             console.error('Connection banner element not found');
         }
+    }
+
+    /**
+     * Initialize notification container for stacked notifications
+     */
+    initializeNotificationContainer() {
+        this.notificationContainer = document.createElement('div');
+        this.notificationContainer.id = 'notificationContainer';
+        this.notificationContainer.style.cssText = `
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            z-index: 10000;
+            pointer-events: none;
+            display: flex;
+            flex-direction: column-reverse;
+            gap: 8px;
+        `;
+
+        /** Add CSS for smooth repositioning of notifications */
+        const style = document.createElement('style');
+        style.textContent = `
+            #notificationContainer > * {
+                transition: all 0.3s ease !important;
+            }
+        `;
+        document.head.appendChild(style);
+        document.body.appendChild(this.notificationContainer);
     }
 
     showMessage(message, type = 'info') {
@@ -1287,56 +1440,70 @@ class MiraDesktop {
         const toast = document.createElement('div');
         toast.className = `toast toast-${type}`;
         toast.style.cssText = `
-            position: fixed;
-            top: 20px;
-            right: 20px;
+            position: relative;
             max-width: 400px;
             padding: 12px 16px;
             background: ${type === 'error' ? '#ff4444' : type === 'warning' ? '#ffaa00' : '#00aa44'};
             color: white;
             border-radius: 8px;
             box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-            z-index: 10000;
             font-size: 14px;
             font-weight: 500;
             opacity: 0;
             transform: translateX(100%);
-            transition: all 0.3s ease;
+            transition: all 0.3s ease, transform 0.3s ease, opacity 0.3s ease;
             word-wrap: break-word;
+            pointer-events: auto;
+            cursor: pointer;
         `;
 
         toast.textContent = message;
-        document.body.appendChild(toast);
 
+        /** Add to notification container instead of body */
+        this.notificationContainer.appendChild(toast);
+        this.activeNotifications.push(toast);
+
+        /** Animate in */
         setTimeout(() => {
             toast.style.opacity = '1';
             toast.style.transform = 'translateX(0)';
         }, 10);
 
-
+        /** Auto-remove non-error notifications */
         if (type !== 'error') {
             const duration = Math.max(3000, Math.min(8000, message.length * 50));
             setTimeout(() => {
-                toast.style.opacity = '0';
-                toast.style.transform = 'translateX(100%)';
-                setTimeout(() => {
-                    if (toast.parentNode) {
-                        toast.parentNode.removeChild(toast);
-                    }
-                }, 300);
+                this.removeNotification(toast);
             }, duration);
         }
 
-
+        /** Click to dismiss */
         toast.addEventListener('click', () => {
-            toast.style.opacity = '0';
-            toast.style.transform = 'translateX(100%)';
-            setTimeout(() => {
-                if (toast.parentNode) {
-                    toast.parentNode.removeChild(toast);
-                }
-            }, 300);
+            this.removeNotification(toast);
         });
+    }
+
+    /**
+     * Remove a notification and update the stack
+     * @param {HTMLElement} toast - The notification element to remove
+     */
+    removeNotification(toast) {
+        if (!toast.parentNode) return;
+
+        toast.style.opacity = '0';
+        toast.style.transform = 'translateX(100%)';
+
+        setTimeout(() => {
+            if (toast.parentNode) {
+                toast.parentNode.removeChild(toast);
+
+                /** Remove from active notifications array */
+                const index = this.activeNotifications.indexOf(toast);
+                if (index > -1) {
+                    this.activeNotifications.splice(index, 1);
+                }
+            }
+        }, 300);
     }
 
     async cleanup() {
@@ -1360,7 +1527,9 @@ class MiraDesktop {
                     if (this.isListening) {
                         await this.apiService.disableService();
                     }
-                } catch (error) {
+                }
+
+                catch (error) {
                     this.log('error', 'Error during cleanup deregistration', error);
                 }
             }
@@ -1376,7 +1545,9 @@ class MiraDesktop {
             this.isToggling = false;
             this.isProcessingAudio = false;
 
-        } catch (error) {
+        }
+
+        catch (error) {
             console.error('Error during cleanup:', error);
         }
     }
@@ -1407,7 +1578,9 @@ document.addEventListener('DOMContentLoaded', () => {
             if (window.miraApp.apiService) {
                 /** Use ApiService if available (fire and forget for unload) */
                 window.miraApp.apiService.deregisterClient().catch(() => { });
-            } else {
+            }
+
+            else {
                 /** Fallback to direct fetch for backwards compatibility */
                 const url = `${window.miraApp.baseUrl}/service/client/deregister/${encodeURIComponent(API_CONFIG.CLIENT_ID)}`;
                 fetch(url, { method: 'DELETE' }).catch(() => { });

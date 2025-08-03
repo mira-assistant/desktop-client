@@ -285,7 +285,7 @@ describe('Desktop Client Integration Tests', () => {
             expect(fetch).toHaveBeenCalledWith(
                 expect.stringContaining('/service/disable'),
                 expect.objectContaining({
-                    method: 'POST'
+                    method: 'PATCH'
                 })
             );
         });

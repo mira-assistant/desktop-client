@@ -19,12 +19,13 @@
                     <i class="fas fa-microphone-alt"></i>
                     Mira
                 </h1>
-                <span class="version">v4.2.0</span>
+                <span class="version">v4.3.0</span>
             </div>
             <div class="status-section">
                 <div class="client-name-section">
                     <label for="clientNameInput">Client Name:</label>
-                    <input type="text" id="clientNameInput" value="desktop-client" placeholder="Enter client name" maxlength="50">
+                    <input type="text" id="clientNameInput" value="desktop-client" placeholder="Enter client name"
+                        maxlength="50">
                 </div>
                 <div class="status-indicator" id="statusIndicator">
                     <div class="status-dot" id="statusDot"></div>
@@ -99,7 +100,7 @@
             <!-- Right side - Interaction -->
             <div class="interaction-section">
                 <div class="interaction-header">
-                    <h2>Live Assistant</h2>
+                    <h2>Transcriptions</h2>
                     <div class="interaction-controls">
                         <button class="clear-button" id="clearButton">
                             <i class="fas fa-trash"></i>
@@ -194,6 +195,7 @@
         });
     </script>
     <script type="module" src="renderer.js"></script>
+    <div class="custom-tooltip" id="custom-tooltip"></div>
 </body>
 
 </html>
