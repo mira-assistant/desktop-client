@@ -22,6 +22,9 @@
                 <span class="version">v4.3.0</span>
             </div>
             <div class="status-section">
+                <div class="training-glyph" id="trainingGlyph" title="Train Speaker Model">
+                    <i class="fas fa-user-graduate"></i>
+                </div>
                 <div class="client-name-section">
                     <label for="clientNameInput">Client Name:</label>
                     <input type="text" id="clientNameInput" value="desktop-client" placeholder="Enter client name"
@@ -126,6 +129,45 @@
                 <i class="fas fa-exclamation-triangle"></i>
                 <span>Cannot connect to Mira backend. Please ensure the backend server is running.</span>
                 <button class="retry-button" id="retryButton">Retry</button>
+            </div>
+        </div>
+
+        <!-- Speaker Training Overlay -->
+        <div class="training-overlay" id="trainingOverlay" style="display: none;">
+            <div class="training-content">
+                <div class="training-box">
+                    <h3>Speaker Training</h3>
+                    <div class="speaker-selection">
+                        <label for="speakerSelect">Select Speaker:</label>
+                        <select id="speakerSelect">
+                            <option value="">Choose a speaker...</option>
+                        </select>
+                    </div>
+                    <div class="speaker-name-input" style="display: none;">
+                        <label for="speakerNameInput">Speaker Name:</label>
+                        <input type="text" id="speakerNameInput" placeholder="Enter speaker name">
+                    </div>
+                    <div class="training-controls">
+                        <button class="btn-primary" id="startTrainingBtn">Start Training</button>
+                        <button class="btn-secondary" id="cancelTrainingBtn">Cancel</button>
+                    </div>
+                    <div class="training-progress" id="trainingProgress" style="display: none;">
+                        <div class="progress-info">
+                            <span id="progressText">Step 1 of 4</span>
+                            <div class="progress-bar">
+                                <div class="progress-fill" id="progressFill"></div>
+                            </div>
+                        </div>
+                        <button class="btn-record" id="recordBtn">
+                            <i class="fas fa-microphone"></i>
+                            <span>Click to Record</span>
+                        </button>
+                    </div>
+                </div>
+                <div class="training-prompt" id="trainingPrompt">
+                    <h4>Please read the following text:</h4>
+                    <p id="promptText"></p>
+                </div>
             </div>
         </div>
     </div>

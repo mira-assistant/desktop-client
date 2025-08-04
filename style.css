@@ -64,6 +64,31 @@ body {
     gap: 25px;
 }
 
+.training-glyph {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    background: linear-gradient(135deg, #f0fffa 0%, #e6fffa 100%);
+    border: 1px solid #80ffdb;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    color: #00cc6a;
+}
+
+.training-glyph:hover {
+    background: linear-gradient(135deg, #e6fffa 0%, #dcfdf7 100%);
+    border-color: #00cc6a;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(0, 204, 106, 0.2);
+}
+
+.training-glyph i {
+    font-size: 14px;
+}
+
 .client-name-section {
     display: flex;
     align-items: center;
@@ -695,6 +720,207 @@ body {
     border-left: 4px solid transparent;
     border-right: 4px solid transparent;
     border-bottom: 4px solid rgba(0, 230, 119, 0.8);
+}
+
+/* Speaker Training Overlay */
+.training-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(8px);
+    z-index: 2000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+}
+
+.training-overlay.show {
+    opacity: 1;
+}
+
+.training-content {
+    display: flex;
+    gap: 40px;
+    max-width: 90%;
+    width: 800px;
+    animation: slideUpFade 0.4s ease;
+}
+
+.training-box {
+    background: white;
+    border-radius: 16px;
+    padding: 32px;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+    min-width: 320px;
+    max-width: 400px;
+}
+
+.training-box h3 {
+    margin: 0 0 24px 0;
+    color: #1f2937;
+    font-size: 24px;
+    font-weight: 600;
+}
+
+.speaker-selection {
+    margin-bottom: 20px;
+}
+
+.speaker-selection label,
+.speaker-name-input label {
+    display: block;
+    margin-bottom: 8px;
+    color: #374151;
+    font-weight: 500;
+}
+
+.speaker-selection select,
+.speaker-name-input input {
+    width: 100%;
+    padding: 12px;
+    border: 1px solid #d1d5db;
+    border-radius: 8px;
+    font-size: 14px;
+    transition: border-color 0.2s ease;
+}
+
+.speaker-selection select:focus,
+.speaker-name-input input:focus {
+    outline: none;
+    border-color: #00cc6a;
+    box-shadow: 0 0 0 3px rgba(0, 204, 106, 0.1);
+}
+
+.speaker-name-input {
+    margin-bottom: 20px;
+}
+
+.training-controls {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 20px;
+}
+
+.btn-primary,
+.btn-secondary,
+.btn-record {
+    padding: 12px 24px;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    border: none;
+}
+
+.btn-primary {
+    background: #00cc6a;
+    color: white;
+}
+
+.btn-primary:hover:not(:disabled) {
+    background: #00b359;
+    transform: translateY(-1px);
+}
+
+.btn-primary:disabled {
+    background: #9ca3af;
+    cursor: not-allowed;
+}
+
+.btn-secondary {
+    background: #f3f4f6;
+    color: #374151;
+    border: 1px solid #d1d5db;
+}
+
+.btn-secondary:hover {
+    background: #e5e7eb;
+}
+
+.btn-record {
+    width: 100%;
+    background: #3b82f6;
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    margin-top: 16px;
+}
+
+.btn-record:hover:not(:disabled) {
+    background: #2563eb;
+}
+
+.btn-record.recording {
+    background: #ef4444;
+    animation: pulse 1s infinite;
+}
+
+.training-progress {
+    margin-top: 20px;
+}
+
+.progress-info {
+    margin-bottom: 16px;
+}
+
+.progress-bar {
+    width: 100%;
+    height: 8px;
+    background: #f3f4f6;
+    border-radius: 4px;
+    overflow: hidden;
+    margin-top: 8px;
+}
+
+.progress-fill {
+    height: 100%;
+    background: #00cc6a;
+    border-radius: 4px;
+    transition: width 0.3s ease;
+    width: 0%;
+}
+
+.training-prompt {
+    background: #f0fffa;
+    border-radius: 16px;
+    padding: 32px;
+    border: 2px solid #80ffdb;
+    min-width: 320px;
+    max-width: 400px;
+}
+
+.training-prompt h4 {
+    margin: 0 0 16px 0;
+    color: #00cc6a;
+    font-size: 18px;
+    font-weight: 600;
+}
+
+.training-prompt p {
+    font-size: 18px;
+    line-height: 1.6;
+    color: #1f2937;
+    margin: 0;
+    font-weight: 500;
+}
+
+@keyframes slideUpFade {
+    from {
+        opacity: 0;
+        transform: translateY(40px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
 }
 
 /* Responsive design */

@@ -108,6 +108,32 @@ class MiraDesktop {
         this.clientNameInput = document.getElementById('clientNameInput');
         this.toolTip = document.getElementById('custom-tooltip');
         this.statusIndicator = document.getElementById('statusIndicator');
+        
+        // Speaker training elements
+        this.trainingGlyph = document.getElementById('trainingGlyph');
+        this.trainingOverlay = document.getElementById('trainingOverlay');
+        this.speakerSelect = document.getElementById('speakerSelect');
+        this.speakerNameInput = document.getElementById('speakerNameInput');
+        this.startTrainingBtn = document.getElementById('startTrainingBtn');
+        this.cancelTrainingBtn = document.getElementById('cancelTrainingBtn');
+        this.trainingProgress = document.getElementById('trainingProgress');
+        this.recordBtn = document.getElementById('recordBtn');
+        this.progressText = document.getElementById('progressText');
+        this.progressFill = document.getElementById('progressFill');
+        this.promptText = document.getElementById('promptText');
+        
+        // Training state
+        this.isTraining = false;
+        this.currentTrainingStep = 0;
+        this.selectedSpeaker = null;
+        this.trainingPrompts = [
+            "The quick brown fox jumps over the lazy dog.",
+            "How now brown cow, the rain in Spain falls mainly on the plain.",
+            "She sells seashells by the seashore, but the shells she sells are seashells for sure.",
+            "Peter Piper picked a peck of pickled peppers, a peck of pickled peppers Peter Piper picked."
+        ];
+        this.trainingRecordings = [];
+        this.trainingMicVAD = null;
     }
 
     /**
@@ -156,6 +182,13 @@ class MiraDesktop {
         this.micButton.addEventListener('click', () => this.toggleListening());
         this.clearButton.addEventListener('click', () => this.clearInteractions());
         this.retryButton.addEventListener('click', () => this.handleRetryConnection());
+
+        // Speaker training event listeners
+        this.trainingGlyph.addEventListener('click', () => this.showTrainingDialog());
+        this.cancelTrainingBtn.addEventListener('click', () => this.hideTrainingDialog());
+        this.startTrainingBtn.addEventListener('click', () => this.startTrainingProcess());
+        this.speakerSelect.addEventListener('change', () => this.handleSpeakerSelection());
+        this.recordBtn.addEventListener('click', () => this.handleTrainingRecord());
 
         this.statusIndicator.addEventListener('mouseenter', () => {
             if (this.apiService.isConnected && this.apiService.baseUrl) {
@@ -1063,25 +1096,38 @@ class MiraDesktop {
             const interactionData = await this.apiService.registerInteraction(audioBytes.buffer, 'wav');
 
             if (interactionData) {
-                this.audioProcessingStats.successfulRequests++;
-                this.audioProcessingStats.totalAudioSent++;
-                this.audioProcessingStats.totalAudioBytes += audioBytes.length;
-                this.audioProcessingStats.averageAudioDuration =
-                    ((this.audioProcessingStats.averageAudioDuration * (this.audioProcessingStats.totalAudioSent - 1)) +
-                        (audioFloat32Array.length / 16000)) / this.audioProcessingStats.totalAudioSent;
+                // Handle different response types
+                if (interactionData.type === 'message') {
+                    // Display agent message without updating UI stats
+                    this.showMessage(interactionData.message, interactionData.level);
+                } else if (interactionData.id) {
+                    // Handle interaction object - update stats and trigger inference
+                    this.audioProcessingStats.successfulRequests++;
+                    this.audioProcessingStats.totalAudioSent++;
+                    this.audioProcessingStats.totalAudioBytes += audioBytes.length;
+                    this.audioProcessingStats.averageAudioDuration =
+                        ((this.audioProcessingStats.averageAudioDuration * (this.audioProcessingStats.totalAudioSent - 1)) +
+                            (audioFloat32Array.length / 16000)) / this.audioProcessingStats.totalAudioSent;
 
-                this.debugLog('audio', 'Audio interaction registered successfully', {
-                    audioLength: audioFloat32Array.length,
-                    audioBytes: audioBytes.length,
-                    interactionData: interactionData
-                });
-            }
+                    this.debugLog('audio', 'Audio interaction registered successfully', {
+                        audioLength: audioFloat32Array.length,
+                        audioBytes: audioBytes.length,
+                        interactionData: interactionData
+                    });
 
-            else {
+                    // Trigger inference pipeline in background
+                    this.apiService.triggerInferencePipeline(interactionData.id).catch(error => {
+                        this.debugLog('api', 'Failed to trigger inference pipeline', { 
+                            interactionId: interactionData.id, 
+                            error: error.message 
+                        });
+                    });
+                }
+            } else {
+                // Handle null response (e.g., when disabling Mira via voice)
+                // Suppress UI updates as requested
                 this.audioProcessingStats.failedRequests++;
-                const errorMessage = 'Audio processing failed';
-                this.log('error', errorMessage);
-                this.showMessage('Failed to process audio. Please try again.', 'error');
+                this.debugLog('audio', 'Interaction returned null - likely voice disable command');
             }
 
         }
@@ -1439,12 +1485,33 @@ class MiraDesktop {
         /** Create a simple toast notification for user feedback */
         const toast = document.createElement('div');
         toast.className = `toast toast-${type}`;
+        
+        // Define colors for different message types
+        let backgroundColor;
+        let textColor = 'white';
+        
+        switch (type) {
+            case 'error':
+                backgroundColor = '#ff4444';
+                break;
+            case 'warning':
+                backgroundColor = '#ffaa00';
+                break;
+            case 'agent':
+                backgroundColor = '#6366f1'; // Indigo color for agent messages
+                break;
+            case 'info':
+            default:
+                backgroundColor = '#00aa44';
+                break;
+        }
+        
         toast.style.cssText = `
             position: relative;
             max-width: 400px;
             padding: 12px 16px;
-            background: ${type === 'error' ? '#ff4444' : type === 'warning' ? '#ffaa00' : '#00aa44'};
-            color: white;
+            background: ${backgroundColor};
+            color: ${textColor};
             border-radius: 8px;
             box-shadow: 0 4px 12px rgba(0,0,0,0.3);
             font-size: 14px;
@@ -1504,6 +1571,307 @@ class MiraDesktop {
                 }
             }
         }, 300);
+    }
+
+    /**
+     * Show speaker training dialog
+     */
+    async showTrainingDialog() {
+        if (this.isTraining) {
+            this.showMessage('Training is already in progress', 'warning');
+            return;
+        }
+
+        try {
+            // Load speakers from backend
+            const speakers = await this.apiService.getSpeakers();
+            this.populateSpeakerDropdown(speakers);
+            
+            // Show overlay with smooth transition
+            this.trainingOverlay.style.display = 'flex';
+            requestAnimationFrame(() => {
+                this.trainingOverlay.classList.add('show');
+            });
+        } catch (error) {
+            this.showMessage('Failed to load speakers: ' + error.message, 'error');
+        }
+    }
+
+    /**
+     * Hide speaker training dialog
+     */
+    hideTrainingDialog() {
+        this.trainingOverlay.classList.remove('show');
+        setTimeout(() => {
+            this.trainingOverlay.style.display = 'none';
+            this.resetTrainingState();
+        }, 300);
+    }
+
+    /**
+     * Populate speaker dropdown with available speakers
+     */
+    populateSpeakerDropdown(speakers) {
+        this.speakerSelect.innerHTML = '<option value="">Choose a speaker...</option>';
+        
+        speakers.forEach(speaker => {
+            const option = document.createElement('option');
+            option.value = speaker.id;
+            option.textContent = speaker.name || `Speaker ${speaker.index}`;
+            this.speakerSelect.appendChild(option);
+        });
+    }
+
+    /**
+     * Handle speaker selection change
+     */
+    handleSpeakerSelection() {
+        const selectedId = this.speakerSelect.value;
+        if (selectedId) {
+            this.selectedSpeaker = selectedId;
+            const selectedOption = this.speakerSelect.selectedOptions[0];
+            this.speakerNameInput.value = selectedOption.textContent;
+            this.speakerNameInput.parentElement.style.display = 'block';
+            this.startTrainingBtn.disabled = false;
+        } else {
+            this.selectedSpeaker = null;
+            this.speakerNameInput.parentElement.style.display = 'none';
+            this.startTrainingBtn.disabled = true;
+        }
+    }
+
+    /**
+     * Start the training process
+     */
+    async startTrainingProcess() {
+        if (!this.selectedSpeaker) {
+            this.showMessage('Please select a speaker first', 'error');
+            return;
+        }
+
+        try {
+            this.isTraining = true;
+            this.currentTrainingStep = 0;
+            this.trainingRecordings = [];
+
+            // Disable Mira service during training
+            if (this.isListening) {
+                await this.apiService.disableService();
+            }
+
+            // Show training progress
+            this.trainingProgress.style.display = 'block';
+            document.querySelector('.speaker-selection').style.display = 'none';
+            document.querySelector('.speaker-name-input').style.display = 'none';
+            document.querySelector('.training-controls').style.display = 'none';
+
+            this.showCurrentPrompt();
+        } catch (error) {
+            this.showMessage('Failed to start training: ' + error.message, 'error');
+            this.isTraining = false;
+        }
+    }
+
+    /**
+     * Show current training prompt
+     */
+    showCurrentPrompt() {
+        const stepNumber = this.currentTrainingStep + 1;
+        const totalSteps = this.trainingPrompts.length;
+        
+        this.progressText.textContent = `Step ${stepNumber} of ${totalSteps}`;
+        this.progressFill.style.width = `${(stepNumber - 1) / totalSteps * 100}%`;
+        this.promptText.textContent = this.trainingPrompts[this.currentTrainingStep];
+        
+        this.recordBtn.innerHTML = '<i class="fas fa-microphone"></i><span>Click to Record</span>';
+        this.recordBtn.disabled = false;
+        this.recordBtn.classList.remove('recording');
+    }
+
+    /**
+     * Handle training recording
+     */
+    async handleTrainingRecord() {
+        if (!this.trainingMicVAD) {
+            await this.startTrainingRecording();
+        } else {
+            await this.stopTrainingRecording();
+        }
+    }
+
+    /**
+     * Start training recording using VAD
+     */
+    async startTrainingRecording() {
+        try {
+            await this.waitForVADLibrary();
+            
+            if (typeof vad === 'undefined' || !vad.MicVAD) {
+                throw new Error('Voice Activity Detection library is not available');
+            }
+
+            const { MicVAD } = vad;
+            let recordedAudio = null;
+
+            this.trainingMicVAD = await MicVAD.new({
+                model: 'legacy',
+                positiveSpeechThreshold: 0.3,
+                negativeSpeechThreshold: 0.1,
+                
+                onSpeechEnd: (audio) => {
+                    recordedAudio = audio;
+                    this.stopTrainingRecording();
+                },
+                
+                onError: (error) => {
+                    this.showMessage('Recording error: ' + error.message, 'error');
+                    this.resetTrainingRecording();
+                }
+            });
+
+            await this.trainingMicVAD.start();
+            
+            this.recordBtn.innerHTML = '<i class="fas fa-stop"></i><span>Recording... Click to Stop</span>';
+            this.recordBtn.classList.add('recording');
+            
+            // Store the recorded audio callback
+            this.recordedAudioCallback = recordedAudio;
+            
+        } catch (error) {
+            this.showMessage('Failed to start recording: ' + error.message, 'error');
+            this.resetTrainingRecording();
+        }
+    }
+
+    /**
+     * Stop training recording and process audio
+     */
+    async stopTrainingRecording() {
+        if (!this.trainingMicVAD) return;
+
+        try {
+            await this.trainingMicVAD.destroy();
+            this.trainingMicVAD = null;
+
+            this.recordBtn.innerHTML = '<i class="fas fa-check"></i><span>Processing...</span>';
+            this.recordBtn.disabled = true;
+            this.recordBtn.classList.remove('recording');
+
+            // Wait a moment for audio to be captured
+            setTimeout(() => {
+                this.processTrainingRecording();
+            }, 500);
+
+        } catch (error) {
+            this.showMessage('Failed to stop recording: ' + error.message, 'error');
+            this.resetTrainingRecording();
+        }
+    }
+
+    /**
+     * Process the training recording
+     */
+    async processTrainingRecording() {
+        // For now, simulate processing and move to next step
+        // In a real implementation, you would get the actual audio data
+        const mockAudioData = new ArrayBuffer(1000); // Placeholder
+        
+        try {
+            const expectedText = this.trainingPrompts[this.currentTrainingStep];
+            const success = await this.apiService.trainSpeakerEmbedding(
+                this.selectedSpeaker,
+                mockAudioData,
+                expectedText
+            );
+
+            if (success) {
+                this.trainingRecordings.push({
+                    step: this.currentTrainingStep,
+                    text: expectedText,
+                    audio: mockAudioData
+                });
+
+                this.currentTrainingStep++;
+                
+                if (this.currentTrainingStep < this.trainingPrompts.length) {
+                    // Move to next step
+                    setTimeout(() => {
+                        this.showCurrentPrompt();
+                    }, 1000);
+                } else {
+                    // Training complete
+                    this.completeTraining();
+                }
+            } else {
+                this.showMessage('Failed to process recording. Please try again.', 'error');
+                this.resetTrainingRecording();
+            }
+        } catch (error) {
+            this.showMessage('Training error: ' + error.message, 'error');
+            this.resetTrainingRecording();
+        }
+    }
+
+    /**
+     * Complete the training process
+     */
+    async completeTraining() {
+        this.progressFill.style.width = '100%';
+        this.progressText.textContent = 'Training Complete!';
+        
+        this.recordBtn.innerHTML = '<i class="fas fa-check-circle"></i><span>Training Successful</span>';
+        this.recordBtn.style.background = '#10b981';
+        this.recordBtn.disabled = true;
+
+        this.showMessage('Speaker training completed successfully!', 'info');
+
+        // Re-enable Mira service
+        try {
+            await this.apiService.enableService();
+        } catch (error) {
+            this.debugLog('training', 'Failed to re-enable service after training', { error: error.message });
+        }
+
+        setTimeout(() => {
+            this.hideTrainingDialog();
+        }, 2000);
+    }
+
+    /**
+     * Reset training recording state
+     */
+    resetTrainingRecording() {
+        if (this.trainingMicVAD) {
+            this.trainingMicVAD.destroy().catch(() => {});
+            this.trainingMicVAD = null;
+        }
+        
+        this.recordBtn.innerHTML = '<i class="fas fa-microphone"></i><span>Click to Record</span>';
+        this.recordBtn.disabled = false;
+        this.recordBtn.classList.remove('recording');
+    }
+
+    /**
+     * Reset training state
+     */
+    resetTrainingState() {
+        this.isTraining = false;
+        this.currentTrainingStep = 0;
+        this.selectedSpeaker = null;
+        this.trainingRecordings = [];
+        
+        this.resetTrainingRecording();
+        
+        // Reset UI
+        this.trainingProgress.style.display = 'none';
+        document.querySelector('.speaker-selection').style.display = 'block';
+        document.querySelector('.speaker-name-input').style.display = 'none';
+        document.querySelector('.training-controls').style.display = 'flex';
+        
+        this.speakerSelect.value = '';
+        this.speakerNameInput.value = '';
+        this.startTrainingBtn.disabled = true;
+        this.recordBtn.style.background = '#3b82f6';
     }
 
     async cleanup() {

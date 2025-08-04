@@ -379,7 +379,7 @@ export class ApiService extends EventTarget {
      * Register audio interaction
      * @param {ArrayBuffer} audioData - Audio data buffer
      * @param {string} format - Audio format (e.g., 'wav')
-     * @returns {Promise<Interaction|null>} Interaction object or null if failed
+     * @returns {Promise<Interaction|Object|null>} Interaction object, message dictionary, or null
      */
     async registerInteraction(audioData, format = 'wav') {
         const formData = new FormData();
@@ -397,7 +397,43 @@ export class ApiService extends EventTarget {
             true
         );
 
-        return response.success && response.data ? Interaction.fromApiResponse(response.data) : null;
+        if (!response.success) {
+            return null;
+        }
+
+        // Handle different response types
+        if (response.data) {
+            // Check if response contains a message dictionary (for agent responses)
+            if (response.data.message && typeof response.data.message === 'string') {
+                return {
+                    type: 'message',
+                    message: response.data.message,
+                    level: response.data.level || 'agent'
+                };
+            }
+            
+            // Check if response is an interaction object
+            if (response.data.id && response.data.text) {
+                return Interaction.fromApiResponse(response.data);
+            }
+        }
+
+        // For voice disable scenarios or empty responses
+        return null;
+    }
+
+    /**
+     * Trigger inference pipeline for an interaction
+     * @param {string} interactionId - Interaction UUID
+     * @returns {Promise<boolean>} True if inference triggered successfully
+     */
+    async triggerInferencePipeline(interactionId) {
+        const endpoint = API_ENDPOINTS.INFERENCE_TRIGGER.replace('{id}', interactionId);
+        const response = await this.makeRequest(endpoint, { 
+            method: 'POST',
+            body: JSON.stringify({ client_id: this.clientId })
+        });
+        return response.success;
     }
 
     /**
@@ -540,6 +576,48 @@ export class ApiService extends EventTarget {
         });
 
         return response.success && response.data ? Action.fromApiResponse(response.data) : null;
+    }
+
+    /**
+     * Get all speakers
+     * @returns {Promise<Array<Object>>} Array of speaker objects
+     */
+    async getSpeakers() {
+        const response = await this.makeRequest(API_ENDPOINTS.SPEAKERS, { method: 'GET' });
+        
+        if (response.success && response.data && Array.isArray(response.data)) {
+            return response.data;
+        }
+        
+        return [];
+    }
+
+    /**
+     * Train speaker embedding
+     * @param {string} speakerId - Speaker ID
+     * @param {ArrayBuffer} audioData - Audio data buffer
+     * @param {string} expectedText - Expected text for training
+     * @param {string} format - Audio format (e.g., 'wav')
+     * @returns {Promise<boolean>} True if training successful
+     */
+    async trainSpeakerEmbedding(speakerId, audioData, expectedText, format = 'wav') {
+        const formData = new FormData();
+        const audioBlob = new Blob([audioData], { type: `audio/${format}` });
+        formData.append('audio', audioBlob, `audio.${format}`);
+        formData.append('expected_text', expectedText);
+        
+        const endpoint = API_ENDPOINTS.SPEAKER_TRAIN.replace('{speaker_id}', speakerId);
+        const response = await this.makeRequest(
+            endpoint,
+            {
+                method: 'POST',
+                body: formData,
+            },
+            API_CONFIG.TIMEOUTS.INTERACTION_REQUEST,
+            true
+        );
+        
+        return response.success;
     }
 
     /**
