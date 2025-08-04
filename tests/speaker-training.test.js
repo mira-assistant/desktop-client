@@ -251,6 +251,7 @@ describe('Message Handling', () => {
                 appendChild: jest.fn()
             };
 
+            // Mock global objects
             global.document = {
                 createElement: jest.fn(() => mockElement)
             };
@@ -264,7 +265,7 @@ describe('Message Handling', () => {
                 notificationContainer: mockContainer,
                 activeNotifications: [],
                 showMessage: function(message, type = 'info') {
-                    const toast = document.createElement('div');
+                    const toast = global.document.createElement('div');
                     toast.className = `toast toast-${type}`;
                     
                     let backgroundColor;
@@ -294,7 +295,7 @@ describe('Message Handling', () => {
 
             mockInstance.showMessage('Test agent message', 'agent');
 
-            expect(document.createElement).toHaveBeenCalledWith('div');
+            expect(global.document.createElement).toHaveBeenCalledWith('div');
             expect(mockElement.className).toBe('toast toast-agent');
             expect(mockElement.style.cssText).toContain('background: #6366f1');
             expect(mockElement.textContent).toBe('Test agent message');
