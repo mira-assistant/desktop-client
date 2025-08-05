@@ -12,6 +12,14 @@
 
 const { spawn } = require('child_process');
 const os = require('os');
+const fs = require('fs');
+const path = require('path');
+
+// Check if Electron is installed
+function checkElectronInstallation() {
+  const electronPath = path.join(__dirname, 'node_modules', 'electron');
+  return fs.existsSync(electronPath);
+}
 
 // Determine if we need --no-sandbox flag
 function needsNoSandbox() {
@@ -21,11 +29,21 @@ function needsNoSandbox() {
   const isDocker = process.env.DOCKER || 
                    process.env.CI || 
                    process.env.GITHUB_ACTIONS ||
-                   require('fs').existsSync('/.dockerenv');
+                   fs.existsSync('/.dockerenv');
   
   // Linux environments often need --no-sandbox in containers/CI
   // macOS and Windows generally don't need it for desktop apps
   return platform === 'linux' || isDocker;
+}
+
+// Check if dependencies are installed
+if (!checkElectronInstallation()) {
+  console.error('❌ Electron is not installed. Please run the following command first:');
+  console.error('');
+  console.error('   npm install');
+  console.error('');
+  console.error('This will install all required dependencies including Electron.');
+  process.exit(1);
 }
 
 // Build electron command
@@ -52,6 +70,20 @@ electron.on('close', (code) => {
 });
 
 electron.on('error', (err) => {
-  console.error('Failed to start Electron:', err);
+  console.error('❌ Failed to start Electron:', err.message);
+  
+  if (err.code === 'ENOENT') {
+    console.error('');
+    console.error('This usually means Electron is not properly installed.');
+    console.error('Please try running:');
+    console.error('');
+    console.error('   npm install');
+    console.error('');
+    console.error('If the issue persists, try:');
+    console.error('');
+    console.error('   rm -rf node_modules package-lock.json');
+    console.error('   npm install');
+  }
+  
   process.exit(1);
 });
