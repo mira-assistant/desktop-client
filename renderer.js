@@ -1982,7 +1982,7 @@ class MiraDesktop {
 
         this.speakerSelect.value = '';
         this.startTrainingBtn.disabled = true;
-        this.recordBtn.style.background = '#3b82f6';
+        // this.recordBtn.style.background = '#3b82f6';
     }
 
     async cleanup() {

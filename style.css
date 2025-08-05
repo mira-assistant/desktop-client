@@ -692,7 +692,7 @@ body {
 .custom-tooltip {
     position: absolute;
     background: linear-gradient(135deg, #00ff88 0%, #00e676 60%);
-    color: gray;
+    color: rgba(0, 0, 0, 0.724);
     padding: 8px 12px;
     border-radius: 6px;
     font-size: 12px;
