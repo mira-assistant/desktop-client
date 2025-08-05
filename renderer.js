@@ -1778,8 +1778,9 @@ class MiraDesktop {
 
         try {
             const expectedText = this.trainingPrompts[this.currentTrainingStep];
-            const success = await this.apiService.trainSpeakerEmbedding(
+            const success = await this.apiService.updatePerson(
                 this.selectedSpeaker,
+                this.speakerNameInput.value,
                 mockAudioData,
                 expectedText
             );

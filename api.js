@@ -486,20 +486,22 @@ export class ApiService extends EventTarget {
     }
 
     /**
-     * Train speaker embedding
-     * @param {string} speakerId - Speaker ID
+     * Train person embedding
+     * @param {string} personId - Person ID
+     * @param {string} name - Name of the person
      * @param {ArrayBuffer} audioData - Audio data buffer
      * @param {string} expectedText - Expected text for training
      * @param {string} format - Audio format (e.g., 'wav')
      * @returns {Promise<boolean>} True if training successful
      */
-    async trainPersonEmbedding(personId, audioData, expectedText, format = 'wav') {
+    async updatePerson(personId, name, audioData, expectedText, format = 'wav') {
         const formData = new FormData();
         const audioBlob = new Blob([audioData], { type: `audio/${format}` });
         formData.append('audio', audioBlob, `audio.${format}`);
         formData.append('expected_text', expectedText);
+        formData.append('name', name);
 
-        const endpoint = API_ENDPOINTS.TRAIN_PERSON_EMBEDDING.replace('{person_id}', personId);
+        const endpoint = API_ENDPOINTS.UPDATE_PERSON.replace('{person_id}', personId);
         const response = await this.makeRequest(
             endpoint,
             {

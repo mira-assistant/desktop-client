@@ -155,7 +155,7 @@ export const API_ENDPOINTS = {
     DELETE_INTERACTION: '/interactions/{interaction_id}',
     GET_PERSON: '/persons/{person_id}',
     GET_ALL_PERSONS: '/persons/all',
-    TRAIN_PERSON_EMBEDDING: '/persons/{person_id}/train_embedding',
+    UPDATE_PERSON: '/persons/{person_id}/update',
 };
 
 /**
