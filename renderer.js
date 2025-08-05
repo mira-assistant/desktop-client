@@ -73,7 +73,7 @@ class MiraDesktop {
             else {
                 this.updateConnectionStatus(false);
                 this.showConnectionBanner();
-                
+
                 /** If training is in progress, end it due to server disconnection */
                 if (this.isTraining) {
                     this.endTrainingDueToDisconnection();
@@ -1658,19 +1658,19 @@ class MiraDesktop {
             this.selectedSpeaker = selectedId;
             const selectedOption = this.speakerSelect.selectedOptions[0];
             const speakerName = selectedOption.textContent;
-            
+
             // Check if speaker has a name (not just "Person X")
             const hasRealName = speakerName && !speakerName.startsWith('Person ');
             this.requiresNameInput = !hasRealName;
             this.currentSpeakerName = hasRealName ? speakerName : '';
-            
+
             // Show floating speaker name
             this.speakerNameDisplay.textContent = this.currentSpeakerName || 'Unnamed Speaker';
             this.floatingSpeakerName.style.display = 'flex';
-            
+
             // Show edit button if name is required or for editing existing names
             this.editNameBtn.style.display = 'block';
-            
+
             // Enable start button only if name is provided or not required
             this.startTrainingBtn.disabled = this.requiresNameInput && !this.currentSpeakerName;
         } else {
@@ -1725,13 +1725,13 @@ class MiraDesktop {
      */
     async endTrainingDueToDisconnection() {
         if (!this.isTraining) return;
-        
+
         this.showMessage('Training ended due to server disconnection', 'error');
-        
+
         // Clean up training state
         await this.resetTrainingRecording();
         this.hideTrainingDialog();
-        
+
         // Try to re-enable Mira service when connection is restored
         // This will be handled by the connection restoration logic
     }
@@ -1740,7 +1740,7 @@ class MiraDesktop {
             this.showMessage('Please select a speaker first', 'error');
             return;
         }
-        
+
         if (this.requiresNameInput && !this.currentSpeakerName) {
             this.showMessage('Please provide a name for the speaker', 'error');
             this.showNameEditModal();
@@ -1762,9 +1762,8 @@ class MiraDesktop {
             document.querySelector('.speaker-selection').style.display = 'none';
             document.querySelector('.training-controls').style.display = 'none';
 
-            // Slide training content to the left and show prompt
-            this.trainingContent.classList.add('training-active');
-            
+            // this.trainingPrompt.style.display = 'block';
+
             // Show the prompt with slide-up animation
             setTimeout(() => {
                 this.trainingPrompt.classList.add('visible');
@@ -1978,7 +1977,7 @@ class MiraDesktop {
         document.querySelector('.training-controls').style.display = 'flex';
 
         // Reset training animations
-        this.trainingContent.classList.remove('training-active');
+        // this.trainingPrompt.style.display = 'none';
         this.trainingPrompt.classList.remove('visible');
 
         this.speakerSelect.value = '';

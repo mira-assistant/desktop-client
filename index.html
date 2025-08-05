@@ -12,7 +12,6 @@
 
 <body>
     <div class="app-container">
-        <!-- Header with status -->
         <header class="app-header">
             <div class="logo-section">
                 <h1 class="app-title">
@@ -37,9 +36,7 @@
             </div>
         </header>
 
-        <!-- Main content area -->
         <main class="main-content">
-            <!-- Left side - Controls -->
             <div class="controls-section">
                 <div class="microphone-container">
                     <button class="mic-button" id="micButton" disabled>
@@ -100,7 +97,6 @@
                 </div>
             </div>
 
-            <!-- Right side - Interaction -->
             <div class="interaction-section">
                 <div class="interaction-header">
                     <h2>Transcriptions</h2>
@@ -123,7 +119,6 @@
             </div>
         </main>
 
-        <!-- Connection status banner -->
         <div class="connection-banner" id="connectionBanner" style="display: none;">
             <div class="banner-content">
                 <i class="fas fa-exclamation-triangle"></i>
@@ -132,14 +127,11 @@
             </div>
         </div>
 
-        <!-- Speaker Training Overlay -->
         <div class="training-overlay" id="trainingOverlay" style="display: none;">
-            <!-- Close button -->
             <button class="training-close-btn" id="trainingCloseBtn" title="Close Training">
                 <i class="fas fa-times"></i>
             </button>
-            
-            <!-- Floating speaker name display -->
+
             <div class="floating-speaker-name" id="floatingSpeakerName" style="display: none;">
                 <span class="speaker-label">Training Speaker:</span>
                 <span class="speaker-name-display" id="speakerNameDisplay">Speaker Name</span>
@@ -147,8 +139,7 @@
                     <i class="fas fa-edit"></i>
                 </button>
             </div>
-            
-            <!-- Name editing modal -->
+
             <div class="name-edit-modal" id="nameEditModal" style="display: none;">
                 <div class="name-edit-content">
                     <h4>Enter Speaker Name</h4>
@@ -159,7 +150,7 @@
                     </div>
                 </div>
             </div>
-            
+
             <div class="training-content">
                 <div class="training-box">
                     <h3>Speaker Training</h3>
@@ -196,13 +187,10 @@
 
     <script src="./node_modules/onnxruntime-web/dist/ort.js"></script>
     <script>
-        // VAD library loading with improved fallback mechanism
         window.vadLibraryLoaded = false;
         window.vadLibraryLoadError = null;
 
-        // Function to load VAD library with proper error handling
         async function loadVADLibrary() {
-            // Try local package first (more reliable in Electron)
             try {
                 console.log('Attempting to load VAD library from local package...');
                 await new Promise((resolve, reject) => {
@@ -225,7 +213,6 @@
             } catch (localError) {
                 console.warn('Local package failed:', localError.message);
 
-                // Fallback to CDN
                 try {
                     console.log('Attempting to load VAD library from CDN...');
                     await new Promise((resolve, reject) => {
@@ -254,7 +241,7 @@
         }
 
         loadVADLibrary().catch(error => {
-            console.error('❌ Failed to load VAD library:', error.message);
+            console.error('Failed to load VAD library:', error.message);
             window.vadLibraryLoadError = error.message;
         });
     </script>
