@@ -108,7 +108,7 @@ class MiraDesktop {
         this.clientNameInput = document.getElementById('clientNameInput');
         this.toolTip = document.getElementById('custom-tooltip');
         this.statusIndicator = document.getElementById('statusIndicator');
-        
+
         // Speaker training elements
         this.trainingGlyph = document.getElementById('trainingGlyph');
         this.trainingOverlay = document.getElementById('trainingOverlay');
@@ -121,7 +121,7 @@ class MiraDesktop {
         this.progressText = document.getElementById('progressText');
         this.progressFill = document.getElementById('progressFill');
         this.promptText = document.getElementById('promptText');
-        
+
         // Training state
         this.isTraining = false;
         this.currentTrainingStep = 0;
@@ -1117,9 +1117,9 @@ class MiraDesktop {
 
                     // Trigger inference pipeline in background
                     this.apiService.triggerInferencePipeline(interactionData.id).catch(error => {
-                        this.debugLog('api', 'Failed to trigger inference pipeline', { 
-                            interactionId: interactionData.id, 
-                            error: error.message 
+                        this.debugLog('api', 'Failed to trigger inference pipeline', {
+                            interactionId: interactionData.id,
+                            error: error.message
                         });
                     });
                 }
@@ -1485,11 +1485,11 @@ class MiraDesktop {
         /** Create a simple toast notification for user feedback */
         const toast = document.createElement('div');
         toast.className = `toast toast-${type}`;
-        
+
         // Define colors for different message types
         let backgroundColor;
         let textColor = 'white';
-        
+
         switch (type) {
             case 'error':
                 backgroundColor = '#ff4444';
@@ -1505,7 +1505,7 @@ class MiraDesktop {
                 backgroundColor = '#00aa44';
                 break;
         }
-        
+
         toast.style.cssText = `
             position: relative;
             max-width: 400px;
@@ -1583,10 +1583,10 @@ class MiraDesktop {
         }
 
         try {
-            // Load speakers from backend
-            const speakers = await this.apiService.getSpeakers();
-            this.populateSpeakerDropdown(speakers);
-            
+            // Load persons from backend
+            const persons = await this.apiService.getPersons();
+            this.populateSpeakerDropdown(persons);
+
             // Show overlay with smooth transition
             this.trainingOverlay.style.display = 'flex';
             requestAnimationFrame(() => {
@@ -1611,13 +1611,13 @@ class MiraDesktop {
     /**
      * Populate speaker dropdown with available speakers
      */
-    populateSpeakerDropdown(speakers) {
-        this.speakerSelect.innerHTML = '<option value="">Choose a speaker...</option>';
-        
-        speakers.forEach(speaker => {
+    populateSpeakerDropdown(persons) {
+        this.speakerSelect.innerHTML = '<option value="">Choose a person...</option>';
+
+        persons.forEach(person => {
             const option = document.createElement('option');
-            option.value = speaker.id;
-            option.textContent = speaker.name || `Speaker ${speaker.index}`;
+            option.value = person.id;
+            option.textContent = person.name || `Person ${person.index}`;
             this.speakerSelect.appendChild(option);
         });
     }
@@ -1678,11 +1678,11 @@ class MiraDesktop {
     showCurrentPrompt() {
         const stepNumber = this.currentTrainingStep + 1;
         const totalSteps = this.trainingPrompts.length;
-        
+
         this.progressText.textContent = `Step ${stepNumber} of ${totalSteps}`;
         this.progressFill.style.width = `${(stepNumber - 1) / totalSteps * 100}%`;
         this.promptText.textContent = this.trainingPrompts[this.currentTrainingStep];
-        
+
         this.recordBtn.innerHTML = '<i class="fas fa-microphone"></i><span>Click to Record</span>';
         this.recordBtn.disabled = false;
         this.recordBtn.classList.remove('recording');
@@ -1705,7 +1705,7 @@ class MiraDesktop {
     async startTrainingRecording() {
         try {
             await this.waitForVADLibrary();
-            
+
             if (typeof vad === 'undefined' || !vad.MicVAD) {
                 throw new Error('Voice Activity Detection library is not available');
             }
@@ -1717,12 +1717,12 @@ class MiraDesktop {
                 model: 'legacy',
                 positiveSpeechThreshold: 0.3,
                 negativeSpeechThreshold: 0.1,
-                
+
                 onSpeechEnd: (audio) => {
                     recordedAudio = audio;
                     this.stopTrainingRecording();
                 },
-                
+
                 onError: (error) => {
                     this.showMessage('Recording error: ' + error.message, 'error');
                     this.resetTrainingRecording();
@@ -1730,13 +1730,13 @@ class MiraDesktop {
             });
 
             await this.trainingMicVAD.start();
-            
+
             this.recordBtn.innerHTML = '<i class="fas fa-stop"></i><span>Recording... Click to Stop</span>';
             this.recordBtn.classList.add('recording');
-            
+
             // Store the recorded audio callback
             this.recordedAudioCallback = recordedAudio;
-            
+
         } catch (error) {
             this.showMessage('Failed to start recording: ' + error.message, 'error');
             this.resetTrainingRecording();
@@ -1775,7 +1775,7 @@ class MiraDesktop {
         // For now, simulate processing and move to next step
         // In a real implementation, you would get the actual audio data
         const mockAudioData = new ArrayBuffer(1000); // Placeholder
-        
+
         try {
             const expectedText = this.trainingPrompts[this.currentTrainingStep];
             const success = await this.apiService.trainSpeakerEmbedding(
@@ -1792,7 +1792,7 @@ class MiraDesktop {
                 });
 
                 this.currentTrainingStep++;
-                
+
                 if (this.currentTrainingStep < this.trainingPrompts.length) {
                     // Move to next step
                     setTimeout(() => {
@@ -1818,7 +1818,7 @@ class MiraDesktop {
     async completeTraining() {
         this.progressFill.style.width = '100%';
         this.progressText.textContent = 'Training Complete!';
-        
+
         this.recordBtn.innerHTML = '<i class="fas fa-check-circle"></i><span>Training Successful</span>';
         this.recordBtn.style.background = '#10b981';
         this.recordBtn.disabled = true;
@@ -1842,10 +1842,10 @@ class MiraDesktop {
      */
     resetTrainingRecording() {
         if (this.trainingMicVAD) {
-            this.trainingMicVAD.destroy().catch(() => {});
+            this.trainingMicVAD.destroy().catch(() => { });
             this.trainingMicVAD = null;
         }
-        
+
         this.recordBtn.innerHTML = '<i class="fas fa-microphone"></i><span>Click to Record</span>';
         this.recordBtn.disabled = false;
         this.recordBtn.classList.remove('recording');
@@ -1859,15 +1859,15 @@ class MiraDesktop {
         this.currentTrainingStep = 0;
         this.selectedSpeaker = null;
         this.trainingRecordings = [];
-        
+
         this.resetTrainingRecording();
-        
+
         // Reset UI
         this.trainingProgress.style.display = 'none';
         document.querySelector('.speaker-selection').style.display = 'block';
         document.querySelector('.speaker-name-input').style.display = 'none';
         document.querySelector('.training-controls').style.display = 'flex';
-        
+
         this.speakerSelect.value = '';
         this.speakerNameInput.value = '';
         this.startTrainingBtn.disabled = true;
@@ -1934,25 +1934,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
     window.addEventListener('beforeunload', async () => {
         if (window.miraApp && window.miraApp.apiService.isRegistered && !window.miraApp.isDeregistering) {
-            /** Use ApiService for deregistration (fire and forget for beforeunload) */
-            window.miraApp.isDeregistering = true;
-            window.miraApp.apiService.deregisterClient().catch(() => { });
+            window.miraApp.apiService.destroy();
         }
     });
 
     window.addEventListener('unload', () => {
         if (window.miraApp && window.miraApp.isRegistered && !window.miraApp.isDeregistering) {
-            window.miraApp.isDeregistering = true;
-            if (window.miraApp.apiService) {
-                /** Use ApiService if available (fire and forget for unload) */
-                window.miraApp.apiService.deregisterClient().catch(() => { });
-            }
-
-            else {
-                /** Fallback to direct fetch for backwards compatibility */
-                const url = `${window.miraApp.baseUrl}/service/client/deregister/${encodeURIComponent(API_CONFIG.CLIENT_ID)}`;
-                fetch(url, { method: 'DELETE' }).catch(() => { });
-            }
+            window.miraApp.apiService.destroy();
         }
     });
 });
@@ -1962,55 +1950,6 @@ document.addEventListener('keydown', (e) => {
         e.preventDefault();
         if (window.miraApp && window.miraApp.isConnected) {
             window.miraApp.toggleListening();
-        }
-    }
-
-    /** Ctrl+Shift+D - Toggle debug mode */
-    if (e.ctrlKey && e.shiftKey && e.code === 'KeyD') {
-        e.preventDefault();
-        if (window.miraApp) {
-            const newDebugMode = !window.miraApp.debugMode;
-            window.miraApp.setDebugMode(newDebugMode);
-            window.miraApp.showMessage(`Debug mode ${newDebugMode ? 'enabled' : 'disabled'}`, 'info');
-        }
-    }
-
-    /** Ctrl+Shift+M - Show detailed debug info (was debug mode toggle, now moved to D) */
-    if (e.ctrlKey && e.shiftKey && e.code === 'KeyM') {
-        e.preventDefault();
-        if (window.miraApp) {
-            window.miraApp.showAudioStats();
-        }
-    }
-
-    /** Ctrl+Shift+T - Test backend connection */
-    if (e.ctrlKey && e.shiftKey && e.code === 'KeyT') {
-        e.preventDefault();
-        if (window.miraApp) {
-            window.miraApp.testBackendConnection();
-        }
-    }
-
-    /** Ctrl+Shift+A - Show debug help */
-    if (e.ctrlKey && e.shiftKey && e.code === 'KeyA') {
-        e.preventDefault();
-        if (window.miraApp) {
-            window.miraApp.printDebugHelp();
-            window.miraApp.showMessage('Debug help displayed in console', 'info');
-        }
-    }
-
-    /** Ctrl+Shift+I - Get debug info */
-    if (e.ctrlKey && e.shiftKey && e.code === 'KeyI') {
-        e.preventDefault();
-        if (window.miraApp) {
-            const debugInfo = window.miraApp.getDebugInfo();
-            console.table(debugInfo.system);
-            console.table(debugInfo.connection);
-            console.table(debugInfo.audio);
-            console.table(debugInfo.ui);
-            console.table(debugInfo.browser);
-            window.miraApp.showMessage('Debug info displayed in console', 'info');
         }
     }
 });

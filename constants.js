@@ -144,17 +144,18 @@ export const DEBUG_CONFIG = {
  * @type {Object}
  */
 export const API_ENDPOINTS = {
-    HEALTH_CHECK: '/',
-    CLIENT_REGISTER: '/service/client/register',
-    CLIENT_DEREGISTER: '/service/client/deregister',
-    SERVICE_ENABLE: '/service/enable',
-    SERVICE_DISABLE: '/service/disable',
-    INTERACTIONS_REGISTER: '/interactions/register',
-    INTERACTIONS: '/interactions',
-    INFERENCE_TRIGGER: '/interactions/{id}/trigger_inference',
-    PERSONS: '/person',
-    SPEAKERS: '/speakers',
-    SPEAKER_TRAIN: '/speakers/{speaker_id}/train_embedding',
+    STATUS: '/',
+    REGISTER_CLIENT: '/service/client/register/{client_id}',
+    DEREGISTER_CLIENT: '/service/client/deregister/{client_id}',
+    ENABLE_SERVICE: '/service/enable',
+    DISABLE_SERVICE: '/service/disable',
+    REGISTER_INTERACTION: '/interactions/register',
+    RUN_INFERENCE: '/interactions/{interaction_id}/inference',
+    GET_INTERACTION: '/interactions/{interaction_id}',
+    DELETE_INTERACTION: '/interactions/{interaction_id}',
+    GET_PERSON: '/persons/{person_id}',
+    GET_ALL_PERSONS: '/persons/all',
+    TRAIN_PERSON_EMBEDDING: '/persons/{person_id}/train_embedding',
 };
 
 /**

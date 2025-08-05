@@ -200,7 +200,7 @@ export class ApiService extends EventTarget {
      * @returns {Promise<Object|null>} Health data or null if failed
      */
     async healthCheck() {
-        const response = await this.makeRequest(API_ENDPOINTS.HEALTH_CHECK, { method: 'GET' });
+        const response = await this.makeRequest(API_ENDPOINTS.STATUS, { method: 'GET' });
         return response.success ? response.data : null;
     }
 
@@ -267,15 +267,15 @@ export class ApiService extends EventTarget {
      */
     getClientIpAddress() {
         const fallback = { local: '127.0.0.1', external: '127.0.0.1' };
-        
+
         if (typeof require !== 'undefined') {
             // Node.js environment (Electron main/preload)
             try {
                 const os = require('os');
                 const networkInterfaces = os.networkInterfaces();
-                
+
                 let externalIp = '127.0.0.1';
-                
+
                 // Look for non-internal IPv4 interfaces
                 for (const interfaceName in networkInterfaces) {
                     const interfaces = networkInterfaces[interfaceName];
@@ -287,14 +287,14 @@ export class ApiService extends EventTarget {
                     }
                     if (externalIp !== '127.0.0.1') break;
                 }
-                
+
                 return { local: '127.0.0.1', external: externalIp };
             } catch (error) {
                 console.warn('Failed to get IP addresses:', error);
                 return fallback;
             }
         }
-        
+
         // Browser environment fallback
         return fallback;
     }
@@ -304,17 +304,17 @@ export class ApiService extends EventTarget {
      * @returns {Promise<boolean>} True if registration successful
      */
     async registerClient() {
-        const endpoint = `${API_ENDPOINTS.CLIENT_REGISTER}/${encodeURIComponent(this.clientId)}`;
+        const endpoint = `${API_ENDPOINTS.REGISTER_CLIENT.replace('{client_id}', encodeURIComponent(this.clientId))}`;
         const clientIpAddresses = this.getClientIpAddress();
-        
-        const response = await this.makeRequest(endpoint, { 
+
+        const response = await this.makeRequest(endpoint, {
             method: 'POST',
-            body: JSON.stringify({ 
+            body: JSON.stringify({
                 local_ip_address: clientIpAddresses.local,
                 external_ip_address: clientIpAddresses.external
             })
         });
-        
+
         if (response.success) {
             this.isRegistered = true;
             return true;
@@ -327,7 +327,7 @@ export class ApiService extends EventTarget {
      * @returns {Promise<boolean>} True if deregistration successful
      */
     async deregisterClient() {
-        const endpoint = `${API_ENDPOINTS.CLIENT_DEREGISTER}/${encodeURIComponent(this.clientId)}`;
+        const endpoint = `${API_ENDPOINTS.DEREGISTER_CLIENT.replace('{client_id}', encodeURIComponent(this.clientId))}`;
         const response = await this.makeRequest(endpoint, { method: 'DELETE' });
         if (response.success) {
             this.isRegistered = false;
@@ -341,7 +341,7 @@ export class ApiService extends EventTarget {
      * @returns {Promise<boolean>} True if service enabled successfully
      */
     async enableService() {
-        const response = await this.makeRequest(API_ENDPOINTS.SERVICE_ENABLE, {
+        const response = await this.makeRequest(API_ENDPOINTS.ENABLE_SERVICE, {
             method: 'PATCH',
             body: JSON.stringify({ client_id: this.clientId })
         });
@@ -356,7 +356,7 @@ export class ApiService extends EventTarget {
      */
     async disableService(maxRetries = API_CONFIG.RETRY_CONFIG.MAX_RETRIES, timeout = API_CONFIG.TIMEOUTS.BACKEND_STOP_REQUEST) {
         for (let attempt = 1; attempt <= maxRetries; attempt++) {
-            const response = await this.makeRequest(API_ENDPOINTS.SERVICE_DISABLE, {
+            const response = await this.makeRequest(API_ENDPOINTS.DISABLE_SERVICE, {
                 method: 'PATCH',
                 body: JSON.stringify({ client_id: this.clientId })
             }, timeout);
@@ -388,7 +388,7 @@ export class ApiService extends EventTarget {
         formData.append('client_id', this.clientId);
 
         const response = await this.makeRequest(
-            API_ENDPOINTS.INTERACTIONS_REGISTER,
+            API_ENDPOINTS.REGISTER_INTERACTION,
             {
                 method: 'POST',
                 body: formData,
@@ -411,7 +411,7 @@ export class ApiService extends EventTarget {
                     level: response.data.level || 'agent'
                 };
             }
-            
+
             // Check if response is an interaction object
             if (response.data.id && response.data.text) {
                 return Interaction.fromApiResponse(response.data);
@@ -428,8 +428,8 @@ export class ApiService extends EventTarget {
      * @returns {Promise<boolean>} True if inference triggered successfully
      */
     async triggerInferencePipeline(interactionId) {
-        const endpoint = API_ENDPOINTS.INFERENCE_TRIGGER.replace('{id}', interactionId);
-        const response = await this.makeRequest(endpoint, { 
+        const endpoint = API_ENDPOINTS.RUN_INFERENCE.replace('{interaction_id}', interactionId);
+        const response = await this.makeRequest(endpoint, {
             method: 'POST',
             body: JSON.stringify({ client_id: this.clientId })
         });
@@ -442,27 +442,10 @@ export class ApiService extends EventTarget {
      * @returns {Promise<Interaction|null>} Interaction object or null if not found
      */
     async getInteraction(interactionId) {
-        const endpoint = `${API_ENDPOINTS.INTERACTIONS}/${interactionId}`;
+        const endpoint = `${API_ENDPOINTS.GET_INTERACTION.replace('{interaction_id}', interactionId)}`;
         const response = await this.makeRequest(endpoint, { method: 'GET' });
 
         return response.success && response.data ? Interaction.fromApiResponse(response.data) : null;
-    }
-
-    /**
-     * Get all interactions with optional filtering
-     * @param {Object} filters - Query filters
-     * @returns {Promise<Array<Interaction>>} Array of interaction objects
-     */
-    async getInteractions(filters = {}) {
-        const queryParams = new URLSearchParams(filters);
-        const endpoint = `${API_ENDPOINTS.INTERACTIONS}?${queryParams}`;
-        const response = await this.makeRequest(endpoint, { method: 'GET' });
-
-        if (response.success && response.data && Array.isArray(response.data)) {
-            return response.data.map(item => Interaction.fromApiResponse(item));
-        }
-
-        return [];
     }
 
     /**
@@ -471,17 +454,8 @@ export class ApiService extends EventTarget {
      * @returns {Promise<boolean>} True if deletion successful
      */
     async deleteInteraction(interactionId) {
-        const endpoint = `${API_ENDPOINTS.INTERACTIONS}/${interactionId}`;
+        const endpoint = `${API_ENDPOINTS.DELETE_INTERACTION.replace('{interaction_id}', interactionId)}`;
         const response = await this.makeRequest(endpoint, { method: 'DELETE' });
-        return response.success;
-    }
-
-    /**
-     * Delete all interactions
-     * @returns {Promise<boolean>} True if deletion successful
-     */
-    async deleteAllInteractions() {
-        const response = await this.makeRequest(API_ENDPOINTS.INTERACTIONS, { method: 'DELETE' });
         return response.success;
     }
 
@@ -491,7 +465,7 @@ export class ApiService extends EventTarget {
      * @returns {Promise<Person|null>} Person object or null if not found
      */
     async getPerson(personId) {
-        const endpoint = `${API_ENDPOINTS.PERSONS}/${personId}`;
+        const endpoint = `${API_ENDPOINTS.GET_PERSON.replace('{person_id}', personId)}`;
         const response = await this.makeRequest(endpoint, { method: 'GET' });
 
         return response.success && response.data ? Person.fromApiResponse(response.data) : null;
@@ -499,96 +473,15 @@ export class ApiService extends EventTarget {
 
     /**
      * Get all persons
-     * @returns {Promise<Array<Person>>} Array of person objects
+     * @returns {Promise<Array<Object>>} Array of person objects
      */
     async getPersons() {
-        const response = await this.makeRequest(API_ENDPOINTS.PERSONS, { method: 'GET' });
+        const response = await this.makeRequest(API_ENDPOINTS.GET_ALL_PERSONS, { method: 'GET' });
 
         if (response.success && response.data && Array.isArray(response.data)) {
             return response.data.map(item => Person.fromApiResponse(item));
         }
 
-        return [];
-    }
-
-    /**
-     * Get conversation by ID
-     * @param {string} conversationId - Conversation UUID
-     * @returns {Promise<Conversation|null>} Conversation object or null if not found
-     */
-    async getConversation(conversationId) {
-        const endpoint = `${API_ENDPOINTS.CONVERSATIONS}/${conversationId}`;
-        const response = await this.makeRequest(endpoint, { method: 'GET' });
-
-        return response.success && response.data ? Conversation.fromApiResponse(response.data) : null;
-    }
-
-    /**
-     * Get all conversations
-     * @returns {Promise<Array<Conversation>>} Array of conversation objects
-     */
-    async getConversations() {
-        const response = await this.makeRequest(API_ENDPOINTS.CONVERSATIONS, { method: 'GET' });
-
-        if (response.success && response.data && Array.isArray(response.data)) {
-            return response.data.map(item => Conversation.fromApiResponse(item));
-        }
-
-        return [];
-    }
-
-    /**
-     * Get action by ID
-     * @param {string} actionId - Action UUID
-     * @returns {Promise<Action|null>} Action object or null if not found
-     */
-    async getAction(actionId) {
-        const endpoint = `${API_ENDPOINTS.ACTIONS}/${actionId}`;
-        const response = await this.makeRequest(endpoint, { method: 'GET' });
-
-        return response.success && response.data ? Action.fromApiResponse(response.data) : null;
-    }
-
-    /**
-     * Get all actions
-     * @returns {Promise<Array<Action>>} Array of action objects
-     */
-    async getActions() {
-        const response = await this.makeRequest(API_ENDPOINTS.ACTIONS, { method: 'GET' });
-
-        if (response.success && response.data && Array.isArray(response.data)) {
-            return response.data.map(item => Action.fromApiResponse(item));
-        }
-
-        return [];
-    }
-
-    /**
-     * Update action status
-     * @param {string} actionId - Action UUID
-     * @param {string} status - New status
-     * @returns {Promise<Action|null>} Updated action object or null if failed
-     */
-    async updateActionStatus(actionId, status) {
-        const response = await this.makeRequest(`/actions/${actionId}`, {
-            method: 'PATCH',
-            body: JSON.stringify({ status })
-        });
-
-        return response.success && response.data ? Action.fromApiResponse(response.data) : null;
-    }
-
-    /**
-     * Get all speakers
-     * @returns {Promise<Array<Object>>} Array of speaker objects
-     */
-    async getSpeakers() {
-        const response = await this.makeRequest(API_ENDPOINTS.SPEAKERS, { method: 'GET' });
-        
-        if (response.success && response.data && Array.isArray(response.data)) {
-            return response.data;
-        }
-        
         return [];
     }
 
@@ -600,13 +493,13 @@ export class ApiService extends EventTarget {
      * @param {string} format - Audio format (e.g., 'wav')
      * @returns {Promise<boolean>} True if training successful
      */
-    async trainSpeakerEmbedding(speakerId, audioData, expectedText, format = 'wav') {
+    async trainPersonEmbedding(personId, audioData, expectedText, format = 'wav') {
         const formData = new FormData();
         const audioBlob = new Blob([audioData], { type: `audio/${format}` });
         formData.append('audio', audioBlob, `audio.${format}`);
         formData.append('expected_text', expectedText);
-        
-        const endpoint = API_ENDPOINTS.SPEAKER_TRAIN.replace('{speaker_id}', speakerId);
+
+        const endpoint = API_ENDPOINTS.TRAIN_PERSON_EMBEDDING.replace('{person_id}', personId);
         const response = await this.makeRequest(
             endpoint,
             {
@@ -616,7 +509,7 @@ export class ApiService extends EventTarget {
             API_CONFIG.TIMEOUTS.INTERACTION_REQUEST,
             true
         );
-        
+
         return response.success;
     }
 
