@@ -134,6 +134,32 @@
 
         <!-- Speaker Training Overlay -->
         <div class="training-overlay" id="trainingOverlay" style="display: none;">
+            <!-- Close button -->
+            <button class="training-close-btn" id="trainingCloseBtn" title="Close Training">
+                <i class="fas fa-times"></i>
+            </button>
+            
+            <!-- Floating speaker name display -->
+            <div class="floating-speaker-name" id="floatingSpeakerName" style="display: none;">
+                <span class="speaker-label">Training Speaker:</span>
+                <span class="speaker-name-display" id="speakerNameDisplay">Speaker Name</span>
+                <button class="edit-name-btn" id="editNameBtn" title="Edit Speaker Name" style="display: none;">
+                    <i class="fas fa-edit"></i>
+                </button>
+            </div>
+            
+            <!-- Name editing modal -->
+            <div class="name-edit-modal" id="nameEditModal" style="display: none;">
+                <div class="name-edit-content">
+                    <h4>Enter Speaker Name</h4>
+                    <input type="text" id="nameEditInput" placeholder="Enter speaker name" maxlength="50">
+                    <div class="name-edit-controls">
+                        <button class="btn-primary" id="confirmNameBtn">Confirm</button>
+                        <button class="btn-secondary" id="cancelNameBtn">Cancel</button>
+                    </div>
+                </div>
+            </div>
+            
             <div class="training-content">
                 <div class="training-box">
                     <h3>Speaker Training</h3>
@@ -142,10 +168,6 @@
                         <select id="speakerSelect">
                             <option value="">Choose a speaker...</option>
                         </select>
-                    </div>
-                    <div class="speaker-name-input" style="display: none;">
-                        <label for="speakerNameInput">Speaker Name:</label>
-                        <input type="text" id="speakerNameInput" placeholder="Enter speaker name">
                     </div>
                     <div class="training-controls">
                         <button class="btn-primary" id="startTrainingBtn">Start Training</button>

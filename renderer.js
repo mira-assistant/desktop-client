@@ -73,6 +73,11 @@ class MiraDesktop {
             else {
                 this.updateConnectionStatus(false);
                 this.showConnectionBanner();
+                
+                /** If training is in progress, end it due to server disconnection */
+                if (this.isTraining) {
+                    this.endTrainingDueToDisconnection();
+                }
 
                 /** Connection lost - let statusChange handle listening state through health checks */
             }
@@ -112,8 +117,15 @@ class MiraDesktop {
         // Speaker training elements
         this.trainingGlyph = document.getElementById('trainingGlyph');
         this.trainingOverlay = document.getElementById('trainingOverlay');
+        this.trainingCloseBtn = document.getElementById('trainingCloseBtn');
         this.speakerSelect = document.getElementById('speakerSelect');
-        this.speakerNameInput = document.getElementById('speakerNameInput');
+        this.floatingSpeakerName = document.getElementById('floatingSpeakerName');
+        this.speakerNameDisplay = document.getElementById('speakerNameDisplay');
+        this.editNameBtn = document.getElementById('editNameBtn');
+        this.nameEditModal = document.getElementById('nameEditModal');
+        this.nameEditInput = document.getElementById('nameEditInput');
+        this.confirmNameBtn = document.getElementById('confirmNameBtn');
+        this.cancelNameBtn = document.getElementById('cancelNameBtn');
         this.startTrainingBtn = document.getElementById('startTrainingBtn');
         this.cancelTrainingBtn = document.getElementById('cancelTrainingBtn');
         this.trainingProgress = document.getElementById('trainingProgress');
@@ -126,6 +138,8 @@ class MiraDesktop {
         this.isTraining = false;
         this.currentTrainingStep = 0;
         this.selectedSpeaker = null;
+        this.currentSpeakerName = '';
+        this.requiresNameInput = false;
         this.trainingPrompts = [
             "The quick brown fox jumps over the lazy dog.",
             "How now brown cow, the rain in Spain falls mainly on the plain.",
@@ -185,9 +199,20 @@ class MiraDesktop {
 
         // Speaker training event listeners
         this.trainingGlyph.addEventListener('click', () => this.showTrainingDialog());
+        this.trainingCloseBtn.addEventListener('click', () => this.hideTrainingDialog());
         this.cancelTrainingBtn.addEventListener('click', () => this.hideTrainingDialog());
         this.startTrainingBtn.addEventListener('click', () => this.startTrainingProcess());
         this.speakerSelect.addEventListener('change', () => this.handleSpeakerSelection());
+        this.editNameBtn.addEventListener('click', () => this.showNameEditModal());
+        this.confirmNameBtn.addEventListener('click', () => this.confirmNameEdit());
+        this.cancelNameBtn.addEventListener('click', () => this.hideNameEditModal());
+        this.nameEditInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                this.confirmNameEdit();
+            } else if (e.key === 'Escape') {
+                this.hideNameEditModal();
+            }
+        });
         this.recordBtn.addEventListener('click', () => this.handleTrainingRecord());
 
         this.statusIndicator.addEventListener('mouseenter', () => {
@@ -1630,22 +1655,93 @@ class MiraDesktop {
         if (selectedId) {
             this.selectedSpeaker = selectedId;
             const selectedOption = this.speakerSelect.selectedOptions[0];
-            this.speakerNameInput.value = selectedOption.textContent;
-            this.speakerNameInput.parentElement.style.display = 'block';
-            this.startTrainingBtn.disabled = false;
+            const speakerName = selectedOption.textContent;
+            
+            // Check if speaker has a name (not just "Person X")
+            const hasRealName = speakerName && !speakerName.startsWith('Person ');
+            this.requiresNameInput = !hasRealName;
+            this.currentSpeakerName = hasRealName ? speakerName : '';
+            
+            // Show floating speaker name
+            this.speakerNameDisplay.textContent = this.currentSpeakerName || 'Unnamed Speaker';
+            this.floatingSpeakerName.style.display = 'flex';
+            
+            // Show edit button if name is required or for editing existing names
+            this.editNameBtn.style.display = 'block';
+            
+            // Enable start button only if name is provided or not required
+            this.startTrainingBtn.disabled = this.requiresNameInput && !this.currentSpeakerName;
         } else {
             this.selectedSpeaker = null;
-            this.speakerNameInput.parentElement.style.display = 'none';
+            this.currentSpeakerName = '';
+            this.requiresNameInput = false;
+            this.floatingSpeakerName.style.display = 'none';
             this.startTrainingBtn.disabled = true;
         }
     }
 
     /**
-     * Start the training process
+     * Show name editing modal
      */
+    showNameEditModal() {
+        this.nameEditInput.value = this.currentSpeakerName;
+        this.nameEditModal.style.display = 'flex';
+        // Focus input after a short delay to ensure modal is rendered
+        setTimeout(() => {
+            this.nameEditInput.focus();
+            this.nameEditInput.select();
+        }, 100);
+    }
+
+    /**
+     * Hide name editing modal
+     */
+    hideNameEditModal() {
+        this.nameEditModal.style.display = 'none';
+        this.nameEditInput.value = '';
+    }
+
+    /**
+     * Confirm name edit
+     */
+    confirmNameEdit() {
+        const newName = this.nameEditInput.value.trim();
+        if (newName) {
+            this.currentSpeakerName = newName;
+            this.speakerNameDisplay.textContent = newName;
+            this.startTrainingBtn.disabled = false;
+            this.hideNameEditModal();
+        } else if (this.requiresNameInput) {
+            this.showMessage('Speaker name is required', 'error');
+        } else {
+            this.hideNameEditModal();
+        }
+    }
+
+    /**
+     * End training due to server disconnection
+     */
+    async endTrainingDueToDisconnection() {
+        if (!this.isTraining) return;
+        
+        this.showMessage('Training ended due to server disconnection', 'error');
+        
+        // Clean up training state
+        await this.resetTrainingRecording();
+        this.hideTrainingDialog();
+        
+        // Try to re-enable Mira service when connection is restored
+        // This will be handled by the connection restoration logic
+    }
     async startTrainingProcess() {
         if (!this.selectedSpeaker) {
             this.showMessage('Please select a speaker first', 'error');
+            return;
+        }
+        
+        if (this.requiresNameInput && !this.currentSpeakerName) {
+            this.showMessage('Please provide a name for the speaker', 'error');
+            this.showNameEditModal();
             return;
         }
 
@@ -1662,7 +1758,6 @@ class MiraDesktop {
             // Show training progress
             this.trainingProgress.style.display = 'block';
             document.querySelector('.speaker-selection').style.display = 'none';
-            document.querySelector('.speaker-name-input').style.display = 'none';
             document.querySelector('.training-controls').style.display = 'none';
 
             this.showCurrentPrompt();
@@ -1780,7 +1875,7 @@ class MiraDesktop {
             const expectedText = this.trainingPrompts[this.currentTrainingStep];
             const success = await this.apiService.updatePerson(
                 this.selectedSpeaker,
-                this.speakerNameInput.value,
+                this.currentSpeakerName,
                 mockAudioData,
                 expectedText
             );
@@ -1859,18 +1954,20 @@ class MiraDesktop {
         this.isTraining = false;
         this.currentTrainingStep = 0;
         this.selectedSpeaker = null;
+        this.currentSpeakerName = '';
+        this.requiresNameInput = false;
         this.trainingRecordings = [];
 
         this.resetTrainingRecording();
 
         // Reset UI
         this.trainingProgress.style.display = 'none';
+        this.floatingSpeakerName.style.display = 'none';
+        this.nameEditModal.style.display = 'none';
         document.querySelector('.speaker-selection').style.display = 'block';
-        document.querySelector('.speaker-name-input').style.display = 'none';
         document.querySelector('.training-controls').style.display = 'flex';
 
         this.speakerSelect.value = '';
-        this.speakerNameInput.value = '';
         this.startTrainingBtn.disabled = true;
         this.recordBtn.style.background = '#3b82f6';
     }
