@@ -892,6 +892,12 @@ body {
     max-width: 90%;
     width: 800px;
     animation: slideUpFade 0.4s ease;
+    transition: all 0.3s ease;
+}
+
+.training-content.training-active {
+    /* Shift left when both boxes are visible */
+    transform: translateX(-100px);
 }
 
 .training-box {
@@ -901,6 +907,7 @@ body {
     box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
     min-width: 320px;
     max-width: 400px;
+    transition: all 0.3s ease;
 }
 
 .training-box h3 {
@@ -996,7 +1003,6 @@ body {
 
 .btn-record.recording {
     background: #ef4444;
-    animation: pulse 1s infinite;
 }
 
 .training-progress {
@@ -1031,6 +1037,16 @@ body {
     border: 2px solid #80ffdb;
     min-width: 320px;
     max-width: 400px;
+    opacity: 0;
+    transform: translateY(50px);
+    transition: all 0.4s ease;
+    pointer-events: none;
+}
+
+.training-prompt.visible {
+    opacity: 1;
+    transform: translateY(0);
+    pointer-events: auto;
 }
 
 .training-prompt h4 {

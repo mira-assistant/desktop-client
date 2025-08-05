@@ -129,6 +129,8 @@ class MiraDesktop {
         this.startTrainingBtn = document.getElementById('startTrainingBtn');
         this.cancelTrainingBtn = document.getElementById('cancelTrainingBtn');
         this.trainingProgress = document.getElementById('trainingProgress');
+        this.trainingPrompt = document.getElementById('trainingPrompt');
+        this.trainingContent = document.querySelector('.training-content');
         this.recordBtn = document.getElementById('recordBtn');
         this.progressText = document.getElementById('progressText');
         this.progressFill = document.getElementById('progressFill');
@@ -141,10 +143,10 @@ class MiraDesktop {
         this.currentSpeakerName = '';
         this.requiresNameInput = false;
         this.trainingPrompts = [
-            "The quick brown fox jumps over the lazy dog.",
-            "How now brown cow, the rain in Spain falls mainly on the plain.",
-            "She sells seashells by the seashore, but the shells she sells are seashells for sure.",
-            "Peter Piper picked a peck of pickled peppers, a peck of pickled peppers Peter Piper picked."
+            "Mira, what's the weather like today?",
+            "Mira, where am I right now?",
+            "Let's go for a walk at 2PM.",
+            "Mira, remind me to call mom tomorrow."
         ];
         this.trainingRecordings = [];
         this.trainingMicVAD = null;
@@ -1755,10 +1757,18 @@ class MiraDesktop {
                 await this.apiService.disableService();
             }
 
-            // Show training progress
+            // Show training progress and hide selection UI
             this.trainingProgress.style.display = 'block';
             document.querySelector('.speaker-selection').style.display = 'none';
             document.querySelector('.training-controls').style.display = 'none';
+
+            // Slide training content to the left and show prompt
+            this.trainingContent.classList.add('training-active');
+            
+            // Show the prompt with slide-up animation
+            setTimeout(() => {
+                this.trainingPrompt.classList.add('visible');
+            }, 150); // Small delay for smoother transition
 
             this.showCurrentPrompt();
         } catch (error) {
@@ -1966,6 +1976,10 @@ class MiraDesktop {
         this.nameEditModal.style.display = 'none';
         document.querySelector('.speaker-selection').style.display = 'block';
         document.querySelector('.training-controls').style.display = 'flex';
+
+        // Reset training animations
+        this.trainingContent.classList.remove('training-active');
+        this.trainingPrompt.classList.remove('visible');
 
         this.speakerSelect.value = '';
         this.startTrainingBtn.disabled = true;
