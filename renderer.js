@@ -1762,12 +1762,14 @@ class MiraDesktop {
             document.querySelector('.speaker-selection').style.display = 'none';
             document.querySelector('.training-controls').style.display = 'none';
 
-            // this.trainingPrompt.style.display = 'block';
+            // Center the training box by moving it left
+            const trainingBox = document.querySelector('.training-box');
+            trainingBox.style.transform = 'translateX(-60px)';
 
-            // Show the prompt with slide-up animation
+            // Show the prompt with slide-out animation from underneath
             setTimeout(() => {
                 this.trainingPrompt.classList.add('visible');
-            }, 150); // Small delay for smoother transition
+            }, 200); // Small delay for smoother transition
 
             this.showCurrentPrompt();
         } catch (error) {
@@ -1979,6 +1981,10 @@ class MiraDesktop {
         // Reset training animations
         // this.trainingPrompt.style.display = 'none';
         this.trainingPrompt.classList.remove('visible');
+
+        // Reset training box position
+        const trainingBox = document.querySelector('.training-box');
+        trainingBox.style.transform = '';
 
         this.speakerSelect.value = '';
         this.startTrainingBtn.disabled = true;
