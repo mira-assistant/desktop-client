@@ -21,6 +21,8 @@ export const API_CONFIG = {
         BACKEND_STOP_REQUEST: 10000,
         /** Health check interval in milliseconds */
         HEALTH_CHECK_INTERVAL: 1000,
+        /** Interaction request timeout in milliseconds */
+        INTERACTION_REQUEST: 30000,
     },
     RETRY_CONFIG: {
         MAX_RETRIES: 2,
@@ -151,11 +153,17 @@ export const API_ENDPOINTS = {
     DISABLE_SERVICE: '/service/disable',
     REGISTER_INTERACTION: '/interactions/register',
     RUN_INFERENCE: '/interactions/{interaction_id}/inference',
+    TRIGGER_INFERENCE: '/interactions/{interaction_id}/trigger_inference',
     GET_INTERACTION: '/interactions/{interaction_id}',
     DELETE_INTERACTION: '/interactions/{interaction_id}',
     GET_PERSON: '/persons/{person_id}',
     GET_ALL_PERSONS: '/persons/all',
     UPDATE_PERSON: '/persons/{person_id}/update',
+    // Speaker endpoints (aliases for persons for backward compatibility)
+    GET_SPEAKERS: '/persons/all',
+    TRAIN_SPEAKER_EMBEDDING: '/persons/{speaker_id}/train_embedding',
+    // Conversation endpoints
+    GET_CONVERSATION: '/conversations/{conversation_id}',
 };
 
 /**

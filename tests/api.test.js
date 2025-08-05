@@ -4,6 +4,7 @@
  */
 
 import { ApiService } from '../api.js';
+import { API_ENDPOINTS } from '../constants.js';
 
 // Mock fetch globally for all tests
 global.fetch = jest.fn();
@@ -57,7 +58,7 @@ describe('ApiService', () => {
             await apiService.checkConnection();
 
             expect(fetch).toHaveBeenCalledWith(
-                expect.stringContaining('/'),
+                expect.stringContaining(API_ENDPOINTS.STATUS),
                 expect.objectContaining({
                     method: 'GET'
                 })
@@ -157,7 +158,7 @@ describe('ApiService', () => {
                 expect(result).toBe(true);
                 expect(apiService.isRegistered).toBe(true);
                 expect(fetch).toHaveBeenCalledWith(
-                    expect.stringContaining('/service/client/register'),
+                    expect.stringContaining(API_ENDPOINTS.REGISTER_CLIENT.replace('{client_id}', apiService.clientId)),
                     expect.objectContaining({
                         method: 'POST'
                     })
@@ -185,7 +186,7 @@ describe('ApiService', () => {
 
                 expect(result).toBeDefined();
                 expect(fetch).toHaveBeenCalledWith(
-                    expect.stringContaining('/'),
+                    expect.stringContaining(API_ENDPOINTS.STATUS),
                     expect.objectContaining({
                         method: 'GET'
                     })
@@ -403,7 +404,7 @@ describe('ApiService', () => {
 
             expect(result).toBe(true);
             expect(fetch).toHaveBeenCalledWith(
-                expect.stringContaining('/service/client/register/desktop-client'),
+                expect.stringContaining(API_ENDPOINTS.REGISTER_CLIENT.replace('{client_id}', 'desktop-client')),
                 expect.objectContaining({
                     method: 'POST',
                     body: expect.stringContaining('local_ip_address'),

@@ -3,6 +3,7 @@
  */
 
 import { ApiService } from '../api.js';
+import { API_ENDPOINTS } from '../constants.js';
 
 // Mock fetch globally for all tests
 global.fetch = jest.fn();
@@ -44,11 +45,17 @@ describe('Speaker Training API', () => {
 
             const speakers = await apiService.getSpeakers();
 
-            expect(speakers).toEqual(mockSpeakers);
+            expect(speakers).toHaveLength(2);
+            expect(speakers[0].id).toBe('1');
+            expect(speakers[0].name).toBe('John Doe');
+            expect(speakers[0].index).toBe(1);
+            expect(speakers[1].id).toBe('2');
+            expect(speakers[1].name).toBe('Jane Smith');
+            expect(speakers[1].index).toBe(2);
             
             // Check that speakers endpoint was called
             expect(fetch).toHaveBeenCalledWith(
-                expect.stringContaining('/speakers'),
+                expect.stringContaining(API_ENDPOINTS.GET_SPEAKERS),
                 expect.objectContaining({
                     method: 'GET'
                 })
@@ -94,7 +101,7 @@ describe('Speaker Training API', () => {
             
             // Check that training endpoint was called
             expect(fetch).toHaveBeenCalledWith(
-                expect.stringContaining('/speakers/test-speaker-id/train_embedding'),
+                expect.stringContaining(API_ENDPOINTS.TRAIN_SPEAKER_EMBEDDING.replace('{speaker_id}', 'test-speaker-id')),
                 expect.objectContaining({
                     method: 'POST',
                     body: expect.any(FormData)
@@ -137,7 +144,7 @@ describe('Speaker Training API', () => {
             
             // Check that inference endpoint was called
             expect(fetch).toHaveBeenCalledWith(
-                expect.stringContaining('/interactions/test-interaction-id/trigger_inference'),
+                expect.stringContaining(API_ENDPOINTS.TRIGGER_INFERENCE.replace('{interaction_id}', 'test-interaction-id')),
                 expect.objectContaining({
                     method: 'POST',
                     body: JSON.stringify({ client_id: 'test-client' })

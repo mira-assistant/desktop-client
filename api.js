@@ -5,7 +5,7 @@
  */
 
 import { API_CONFIG, API_ENDPOINTS, ERROR_MESSAGES } from './constants.js';
-import { ApiResponse, Person, Interaction, Conversation, Action } from './models.js';
+import { ApiResponse, Person, Interaction, Conversation } from './models.js';
 
 export class ApiService extends EventTarget {
     /**
@@ -428,7 +428,7 @@ export class ApiService extends EventTarget {
      * @returns {Promise<boolean>} True if inference triggered successfully
      */
     async triggerInferencePipeline(interactionId) {
-        const endpoint = API_ENDPOINTS.RUN_INFERENCE.replace('{interaction_id}', interactionId);
+        const endpoint = API_ENDPOINTS.TRIGGER_INFERENCE.replace('{interaction_id}', interactionId);
         const response = await this.makeRequest(endpoint, {
             method: 'POST',
             body: JSON.stringify({ client_id: this.clientId })
@@ -513,6 +513,60 @@ export class ApiService extends EventTarget {
         );
 
         return response.success;
+    }
+
+    /**
+     * Get all speakers (alias for getPersons for backward compatibility)
+     * @returns {Promise<Array<Object>>} Array of speaker objects
+     */
+    async getSpeakers() {
+        const response = await this.makeRequest(API_ENDPOINTS.GET_SPEAKERS, { method: 'GET' });
+
+        if (response.success && response.data && Array.isArray(response.data)) {
+            return response.data.map(item => Person.fromApiResponse(item));
+        }
+
+        return [];
+    }
+
+    /**
+     * Train speaker embedding (alias for updatePerson for backward compatibility)
+     * @param {string} speakerId - Speaker ID
+     * @param {ArrayBuffer} audioData - Audio data buffer
+     * @param {string} expectedText - Expected text for training
+     * @param {string} format - Audio format (e.g., 'wav')
+     * @returns {Promise<boolean>} True if training successful
+     */
+    async trainSpeakerEmbedding(speakerId, audioData, expectedText, format = 'wav') {
+        const formData = new FormData();
+        const audioBlob = new Blob([audioData], { type: `audio/${format}` });
+        formData.append('audio', audioBlob, `audio.${format}`);
+        formData.append('expected_text', expectedText);
+
+        const endpoint = API_ENDPOINTS.TRAIN_SPEAKER_EMBEDDING.replace('{speaker_id}', speakerId);
+        const response = await this.makeRequest(
+            endpoint,
+            {
+                method: 'POST',
+                body: formData,
+            },
+            API_CONFIG.TIMEOUTS.INTERACTION_REQUEST,
+            true
+        );
+
+        return response.success;
+    }
+
+    /**
+     * Get conversation by ID
+     * @param {string} conversationId - Conversation UUID
+     * @returns {Promise<Conversation|null>} Conversation object or null if not found
+     */
+    async getConversation(conversationId) {
+        const endpoint = API_ENDPOINTS.GET_CONVERSATION.replace('{conversation_id}', conversationId);
+        const response = await this.makeRequest(endpoint, { method: 'GET' });
+
+        return response.success && response.data ? Conversation.fromApiResponse(response.data) : null;
     }
 
     /**
