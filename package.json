@@ -7,7 +7,7 @@
   "scripts": {
     "start": "node start-script.js",
     "start-dev": "NODE_ENV=development node start-script.js",
-    "test": " --updateSnapshot",
+    "test": "jest --updateSnapshot",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
     "build": "electron-builder --publish=never",
