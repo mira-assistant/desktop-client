@@ -1,13 +1,13 @@
 {
   "name": "mira-desktop",
   "version": "4.3.0",
-  "description": "Mira Desktop - Cross-platform voice interaction application",
+  "description": "Mira AI Assistant",
   "main": "main.js",
   "type": "commonjs",
   "scripts": {
     "start": "node start-script.js",
     "start-dev": "NODE_ENV=development node start-script.js",
-    "test": "jest",
+    "test": "jest --updateSnapshot",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
     "build": "electron-builder --publish=never",

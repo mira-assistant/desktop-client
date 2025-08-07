@@ -4,6 +4,7 @@
     margin: 0;
     padding: 0;
     box-sizing: border-box;
+    --accent-color: #00cc6a;
 }
 
 body {
@@ -62,6 +63,31 @@ body {
     display: flex;
     align-items: center;
     gap: 25px;
+}
+
+.training-glyph {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    background: linear-gradient(135deg, #f0fffa 0%, #e6fffa 100%);
+    border: 1px solid #80ffdb;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    color: #00cc6a;
+}
+
+.training-glyph:hover {
+    background: linear-gradient(135deg, #e6fffa 0%, #dcfdf7 100%);
+    border-color: #00cc6a;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(0, 204, 106, 0.2);
+}
+
+.training-glyph i {
+    font-size: 14px;
 }
 
 .client-name-section {
@@ -543,6 +569,7 @@ body {
     border-bottom: 1px solid #f59e0b;
     z-index: 1000;
     animation: slideDown 0.3s ease;
+    height: 51px;
 }
 
 .banner-content {
@@ -550,7 +577,7 @@ body {
     align-items: center;
     justify-content: center;
     gap: 12px;
-    padding: 12px 24px;
+    padding: 12px 0px;
     color: #92400e;
     font-size: 14px;
 }
@@ -665,7 +692,7 @@ body {
 .custom-tooltip {
     position: absolute;
     background: linear-gradient(135deg, #00ff88 0%, #00e676 60%);
-    color: gray;
+    color: rgba(0, 0, 0, 0.724);
     padding: 8px 12px;
     border-radius: 6px;
     font-size: 12px;
@@ -695,6 +722,370 @@ body {
     border-left: 4px solid transparent;
     border-right: 4px solid transparent;
     border-bottom: 4px solid rgba(0, 230, 119, 0.8);
+}
+
+/* Speaker Training Overlay */
+.training-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 2000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    backdrop-filter: blur(0px);
+    background: rgba(0, 0, 0, 0);
+    transition: opacity 0.5s ease, backdrop-filter 0.5s ease, background 0.5s ease;
+}
+
+.training-overlay.show {
+    opacity: 1;
+    backdrop-filter: blur(8px);
+    background: rgba(0, 0, 0, 0.5);
+}
+
+/* Close button */
+.training-close-btn {
+    position: absolute;
+    top: 20px;
+    right: 20px;
+    width: 44px;
+    height: 44px;
+    background: rgba(255, 255, 255, 0.9);
+    border: none;
+    border-radius: 50%;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #374151;
+    font-size: 18px;
+    transition: all 0.2s ease;
+}
+
+.training-close-btn:hover {
+    background: rgba(255, 255, 255, 1);
+    transform: scale(1.05);
+}
+
+/* Floating speaker name */
+.floating-speaker-name {
+    position: absolute;
+    top: 30px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(255, 255, 255, 0.9);
+    backdrop-filter: blur(8px);
+    padding: 12px 24px;
+    border-radius: 24px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: #1f2937;
+    font-weight: 500;
+    z-index: 2001;
+    animation: slideDownFade 0.4s ease;
+}
+
+.floating-speaker-name .speaker-label {
+    color: #6b7280;
+    font-size: 14px;
+}
+
+.floating-speaker-name .speaker-name-display {
+    color: #1f2937;
+    font-size: 16px;
+    font-weight: 600;
+}
+
+.floating-speaker-name .edit-name-btn {
+    background: none;
+    border: none;
+    color: #6b7280;
+    cursor: pointer;
+    padding: 4px;
+    border-radius: 4px;
+    transition: all 0.2s ease;
+}
+
+.floating-speaker-name .edit-name-btn:hover {
+    color: #374151;
+    background: rgba(0, 0, 0, 0.05);
+}
+
+/* Name editing modal */
+.name-edit-modal {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.7);
+    backdrop-filter: blur(12px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 2002;
+}
+
+.name-edit-content {
+    background: white;
+    border-radius: 16px;
+    padding: 24px;
+    min-width: 320px;
+    max-width: 400px;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+    animation: slideUpFade 0.3s ease;
+}
+
+.name-edit-content h4 {
+    margin: 0 0 16px 0;
+    color: #1f2937;
+    font-size: 18px;
+    font-weight: 600;
+}
+
+.name-edit-content input {
+    width: 100%;
+    padding: 12px;
+    border: 1px solid #d1d5db;
+    border-radius: 8px;
+    font-size: 14px;
+    margin-bottom: 16px;
+    box-sizing: border-box;
+    transition: border-color 0.2s ease;
+}
+
+.name-edit-content input:focus {
+    outline: none;
+    border-color: #00cc6a;
+    box-shadow: 0 0 0 3px rgba(0, 204, 106, 0.1);
+}
+
+.name-edit-controls {
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+}
+
+.name-edit-controls .btn-primary,
+.name-edit-controls .btn-secondary {
+    padding: 8px 16px;
+    font-size: 14px;
+}
+
+@keyframes slideDownFade {
+    from {
+        opacity: 0;
+        transform: translateX(-50%) translateY(-20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(-50%) translateY(0);
+    }
+}
+
+.training-content {
+    display: flex;
+    gap: 40px;
+    transition: all 0.3s ease;
+    position: relative;
+    align-items: center;
+}
+
+.training-box {
+    background: rgba(255, 255, 255, 0.494);
+    border-radius: 16px;
+    padding: 32px;
+    /* box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3); */
+    min-width: 320px;
+    max-width: 400px;
+    transition: all 0.3s ease;
+    animation: slideUpFade 0.4s ease;
+}
+
+.training-box h3 {
+    margin: 0 0 24px 0;
+    color: #1f2937;
+    font-size: 24px;
+    font-weight: 600;
+}
+
+.speaker-selection {
+    margin-bottom: 20px;
+}
+
+.speaker-selection label {
+    display: block;
+    margin-bottom: 8px;
+    color: #374151;
+    font-weight: 500;
+}
+
+.speaker-selection select {
+    width: 100%;
+    padding: 12px;
+    border: 1px solid #d1d5db;
+    border-radius: 8px;
+    font-size: 14px;
+    transition: border-color 0.2s ease;
+}
+
+.speaker-selection select:focus {
+    outline: none;
+    border-color: #00cc6a;
+    box-shadow: 0 0 0 3px rgba(0, 204, 106, 0.1);
+}
+
+.training-controls {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 20px;
+}
+
+.btn-primary,
+.btn-secondary,
+.btn-record {
+    padding: 12px 24px;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 500;
+    background-color: var(--accent-color);
+    cursor: pointer;
+    transition: all 0.2s ease;
+    border: none;
+}
+
+.btn-primary {
+    background: #00cc6a;
+    color: white;
+}
+
+.btn-primary:hover:not(:disabled) {
+    background: #00b359;
+    transform: translateY(-1px);
+}
+
+.btn-primary:disabled {
+    background: #9ca3af;
+    cursor: not-allowed;
+}
+
+.btn-secondary {
+    background: #f3f4f6;
+    color: #374151;
+    border: 1px solid #d1d5db;
+}
+
+.btn-secondary:hover {
+    background: #e5e7eb;
+}
+
+.btn-record {
+    width: 100%;
+    background: #3b82f6;
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    margin-top: 16px;
+}
+
+.btn-record:hover:not(:disabled) {
+    background: #2563eb;
+}
+
+.btn-record.recording {
+    background: #ef4444;
+}
+
+.training-progress {
+    margin-top: 20px;
+}
+
+.progress-info {
+    margin-bottom: 16px;
+}
+
+.progress-bar {
+    width: 100%;
+    height: 8px;
+    background: #f3f4f6;
+    border-radius: 4px;
+    overflow: hidden;
+    margin-top: 8px;
+}
+
+.progress-fill {
+    height: 100%;
+    background: #00cc6a;
+    border-radius: 4px;
+    transition: width 0.3s ease;
+    width: 0%;
+}
+
+.training-prompt {
+    background: transparent;
+    border-radius: 0px;
+    opacity: 0;
+    transition: all 0.4s ease;
+    pointer-events: none;
+    display: none;
+    height: fit-content;
+    transform: translateX(-100px) translateY(-20px);
+}
+
+.training-prompt.visible {
+    opacity: 1;
+    pointer-events: auto;
+    display: block;
+    transform: translateX(0) translateY(0);
+    animation: slideOutFromUnderneath 0.6s ease;
+}
+
+.training-prompt h4 {
+    margin: 0 0 16px 0;
+    color: #00cc6a;
+    font-size: 18px;
+    font-weight: 600;
+}
+
+.training-prompt p {
+    font-size: 30px;
+    line-height: 1.6;
+    color: #ffffff;
+    margin: 0;
+    font-weight: 600;
+}
+
+@keyframes slideUpFade {
+    from {
+        opacity: 0;
+        transform: translateY(40px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes slideOutFromUnderneath {
+    0% {
+        opacity: 0;
+        transform: translateX(-100px) translateY(-20px);
+    }
+    50% {
+        opacity: 0.5;
+        transform: translateX(-30px) translateY(-10px);
+    }
+    100% {
+        opacity: 1;
+        transform: translateX(0) translateY(0);
+    }
 }
 
 /* Responsive design */

@@ -34,10 +34,9 @@ jobs:
 
       - name: Run ESLint (Linting)
         run: npm run lint
-        continue-on-error: true
 
       - name: Build Electron App
         run: npm run build
 
       - name: Run frontend tests
-        run: npm test || echo "No tests found"
+        run: npm test

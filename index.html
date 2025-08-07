@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Mira - Personal AI Assistant</title>
+    <title>Mira - AI Assistant</title>
     <link rel="stylesheet" href="style.css">
 
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
@@ -12,7 +12,6 @@
 
 <body>
     <div class="app-container">
-        <!-- Header with status -->
         <header class="app-header">
             <div class="logo-section">
                 <h1 class="app-title">
@@ -22,6 +21,9 @@
                 <span class="version">v4.3.0</span>
             </div>
             <div class="status-section">
+                <div class="training-glyph" id="trainingGlyph" title="Train Speaker Model">
+                    <i class="fas fa-user-graduate"></i>
+                </div>
                 <div class="client-name-section">
                     <label for="clientNameInput">Client Name:</label>
                     <input type="text" id="clientNameInput" value="desktop-client" placeholder="Enter client name"
@@ -34,9 +36,7 @@
             </div>
         </header>
 
-        <!-- Main content area -->
         <main class="main-content">
-            <!-- Left side - Controls -->
             <div class="controls-section">
                 <div class="microphone-container">
                     <button class="mic-button" id="micButton" disabled>
@@ -97,7 +97,6 @@
                 </div>
             </div>
 
-            <!-- Right side - Interaction -->
             <div class="interaction-section">
                 <div class="interaction-header">
                     <h2>Transcriptions</h2>
@@ -120,7 +119,6 @@
             </div>
         </main>
 
-        <!-- Connection status banner -->
         <div class="connection-banner" id="connectionBanner" style="display: none;">
             <div class="banner-content">
                 <i class="fas fa-exclamation-triangle"></i>
@@ -128,17 +126,71 @@
                 <button class="retry-button" id="retryButton">Retry</button>
             </div>
         </div>
+
+        <div class="training-overlay" id="trainingOverlay" style="display: none;">
+            <button class="training-close-btn" id="trainingCloseBtn" title="Close Training">
+                <i class="fas fa-times"></i>
+            </button>
+
+            <div class="floating-speaker-name" id="floatingSpeakerName" style="display: none;">
+                <span class="speaker-label">Training Speaker:</span>
+                <span class="speaker-name-display" id="speakerNameDisplay">Speaker Name</span>
+                <button class="edit-name-btn" id="editNameBtn" title="Edit Speaker Name" style="display: none;">
+                    <i class="fas fa-edit"></i>
+                </button>
+            </div>
+
+            <div class="name-edit-modal" id="nameEditModal" style="display: none;">
+                <div class="name-edit-content">
+                    <h4>Enter Speaker Name</h4>
+                    <input type="text" id="nameEditInput" placeholder="Enter speaker name" maxlength="50">
+                    <div class="name-edit-controls">
+                        <button class="btn-primary" id="confirmNameBtn">Confirm</button>
+                        <button class="btn-secondary" id="cancelNameBtn">Cancel</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="training-content">
+                <div class="training-box">
+                    <h3>Speaker Training</h3>
+                    <div class="speaker-selection">
+                        <label for="speakerSelect">Select Speaker:</label>
+                        <select id="speakerSelect">
+                            <option value="">Choose a speaker...</option>
+                        </select>
+                    </div>
+                    <div class="training-controls">
+                        <button class="btn-primary" id="startTrainingBtn">Start Training</button>
+                        <button class="btn-secondary" id="cancelTrainingBtn">Cancel</button>
+                    </div>
+                    <div class="training-progress" id="trainingProgress" style="display: none;">
+                        <div class="progress-info">
+                            <span id="progressText">Step 1 of 4</span>
+                            <div class="progress-bar">
+                                <div class="progress-fill" id="progressFill"></div>
+                            </div>
+                        </div>
+                        <button class="btn-record" id="recordBtn">
+                            <i class="fas fa-microphone"></i>
+                            <span>Click to Record</span>
+                        </button>
+                    </div>
+                </div>
+                <div class="training-prompt" id="trainingPrompt">
+                    <h4>Please read the following text:</h4>
+                    <p id="promptText"></p>
+                </div>
+            </div>
+        </div>
     </div>
 
     <script src="./node_modules/onnxruntime-web/dist/ort.js"></script>
     <script>
-        // VAD library loading with improved fallback mechanism
         window.vadLibraryLoaded = false;
         window.vadLibraryLoadError = null;
 
-        // Function to load VAD library with proper error handling
         async function loadVADLibrary() {
-            // Try local package first (more reliable in Electron)
             try {
                 console.log('Attempting to load VAD library from local package...');
                 await new Promise((resolve, reject) => {
@@ -161,7 +213,6 @@
             } catch (localError) {
                 console.warn('Local package failed:', localError.message);
 
-                // Fallback to CDN
                 try {
                     console.log('Attempting to load VAD library from CDN...');
                     await new Promise((resolve, reject) => {
@@ -190,7 +241,7 @@
         }
 
         loadVADLibrary().catch(error => {
-            console.error('❌ Failed to load VAD library:', error.message);
+            console.error('Failed to load VAD library:', error.message);
             window.vadLibraryLoadError = error.message;
         });
     </script>

@@ -10,28 +10,22 @@ class MiraDesktop {
      * Initialize the MiraDesktop application
      */
     constructor() {
-        /** Initialize API service that manages its own connection */
         this.apiService = new ApiService();
 
-        /** Local state (not available via API service) */
         this.isListening = false;
         this.isToggling = false;
         this.isProcessingAudio = false;
         this.isDeregistering = false;
         this.isTogglingAudioCapture = false;
 
-        /** Interaction data */
         this.interactions = [];
 
-        /** Person management */
         this.personIndexMap = new Map();
         this.nextPersonIndex = 0;
 
-        /** Notification management */
         this.activeNotifications = [];
         this.notificationContainer = null;
 
-        /** Audio capture properties for VAD-based recording */
         this.micVAD = null;
         this.isRecording = false;
         this.audioProcessingStats = {
@@ -42,15 +36,15 @@ class MiraDesktop {
             averageAudioDuration: 0
         };
 
-        /** Set up API service event listeners */
+        this.sharedVAD = null;
+        this.vadMode = null;
+
         this.initializeElements();
         this.setupEventListeners();
         this.setupApiEventListeners();
 
-        /** Initialize connection banner state - start as disconnected */
         this.showConnectionBanner();
 
-        /** Initialize notification container */
         this.initializeNotificationContainer();
     }
 
@@ -58,7 +52,6 @@ class MiraDesktop {
      * Set up event listeners for API service events
      */
     setupApiEventListeners() {
-        /** Listen for connection changes, complete disconnection, or new host */
         this.apiService.addEventListener('connectionChange', (event) => {
             const { connected, hostName, url } = event.detail;
 
@@ -66,7 +59,6 @@ class MiraDesktop {
                 this.updateConnectionStatus(true);
                 this.hideConnectionBanner();
 
-                /** Log successful connection */
                 this.log('info', `Connected to ${hostName} at ${url}`);
             }
 
@@ -74,20 +66,20 @@ class MiraDesktop {
                 this.updateConnectionStatus(false);
                 this.showConnectionBanner();
 
-                /** Connection lost - let statusChange handle listening state through health checks */
+                if (this.isTraining) {
+                    this.endTrainingDueToDisconnection();
+                }
+
             }
         });
 
-        /** Listen for service status changes */
         this.apiService.addEventListener('statusChange', (event) => {
             const { enabled } = event.detail;
             this.updateServerStatus({ enabled });
 
-            /** Manage listening state based on service status */
             this.manageListeningState(enabled);
         });
 
-        /** Listen for interaction updates */
         this.apiService.addEventListener('interactionsUpdated', (event) => {
             const { interactionIds } = event.detail;
             this.fetchLatestInteractions(interactionIds);
@@ -108,6 +100,41 @@ class MiraDesktop {
         this.clientNameInput = document.getElementById('clientNameInput');
         this.toolTip = document.getElementById('custom-tooltip');
         this.statusIndicator = document.getElementById('statusIndicator');
+
+        this.trainingGlyph = document.getElementById('trainingGlyph');
+        this.trainingOverlay = document.getElementById('trainingOverlay');
+        this.trainingCloseBtn = document.getElementById('trainingCloseBtn');
+        this.speakerSelect = document.getElementById('speakerSelect');
+        this.floatingSpeakerName = document.getElementById('floatingSpeakerName');
+        this.speakerNameDisplay = document.getElementById('speakerNameDisplay');
+        this.editNameBtn = document.getElementById('editNameBtn');
+        this.nameEditModal = document.getElementById('nameEditModal');
+        this.nameEditInput = document.getElementById('nameEditInput');
+        this.confirmNameBtn = document.getElementById('confirmNameBtn');
+        this.cancelNameBtn = document.getElementById('cancelNameBtn');
+        this.startTrainingBtn = document.getElementById('startTrainingBtn');
+        this.cancelTrainingBtn = document.getElementById('cancelTrainingBtn');
+        this.trainingProgress = document.getElementById('trainingProgress');
+        this.trainingPrompt = document.getElementById('trainingPrompt');
+        this.trainingContent = document.querySelector('.training-content');
+        this.recordBtn = document.getElementById('recordBtn');
+        this.progressText = document.getElementById('progressText');
+        this.progressFill = document.getElementById('progressFill');
+        this.promptText = document.getElementById('promptText');
+
+        this.isTraining = false;
+        this.currentTrainingStep = 0;
+        this.selectedSpeaker = null;
+        this.currentSpeakerName = '';
+        this.requiresNameInput = false;
+        this.trainingPrompts = [
+            "Mira, what's the weather like today?",
+            "Mira, where am I right now?",
+            "Let's go for a walk at 2PM.",
+            "Mira, remind me to call mom tomorrow."
+        ];
+        this.trainingRecordings = [];
+        this.currentTrainingAudio = null;
     }
 
     /**
@@ -118,7 +145,6 @@ class MiraDesktop {
     async manageListeningState(enabled) {
         try {
             if (enabled && !this.isListening) {
-                /** Enable listening: start audio capture and interaction */
                 await this.startAudioCapture();
                 this.isListening = true;
                 this.updateListeningUI(true);
@@ -128,7 +154,6 @@ class MiraDesktop {
                     vadInitialized: !!this.micVAD
                 });
             } else if (!enabled && this.isListening) {
-                /** Disable listening: stop audio capture and cleanup */
                 await this.stopAudioCapture();
                 this.isListening = false;
                 this.updateListeningUI(false);
@@ -142,7 +167,6 @@ class MiraDesktop {
 
         catch (error) {
             this.log('error', 'Error in manageListeningState', error);
-            /** Ensure cleanup on error */
             if (!enabled) {
                 await this.stopAudioCapture();
                 this.isListening = false;
@@ -156,6 +180,23 @@ class MiraDesktop {
         this.micButton.addEventListener('click', () => this.toggleListening());
         this.clearButton.addEventListener('click', () => this.clearInteractions());
         this.retryButton.addEventListener('click', () => this.handleRetryConnection());
+
+        this.trainingGlyph.addEventListener('click', () => this.showTrainingDialog());
+        this.trainingCloseBtn.addEventListener('click', () => this.hideTrainingDialog());
+        this.cancelTrainingBtn.addEventListener('click', () => this.hideTrainingDialog());
+        this.startTrainingBtn.addEventListener('click', () => this.startTrainingProcess());
+        this.speakerSelect.addEventListener('change', () => this.handleSpeakerSelection());
+        this.editNameBtn.addEventListener('click', () => this.showNameEditModal());
+        this.confirmNameBtn.addEventListener('click', () => this.confirmNameEdit());
+        this.cancelNameBtn.addEventListener('click', () => this.hideNameEditModal());
+        this.nameEditInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                this.confirmNameEdit();
+            } else if (e.key === 'Escape') {
+                this.hideNameEditModal();
+            }
+        });
+        this.recordBtn.addEventListener('click', () => this.handleTrainingRecord());
 
         this.statusIndicator.addEventListener('mouseenter', () => {
             if (this.apiService.isConnected && this.apiService.baseUrl) {
@@ -214,7 +255,6 @@ class MiraDesktop {
      */
     async handleClientNameChange(newClientName) {
         if (!newClientName || newClientName.trim() === '') {
-            /** Reset to current client ID if empty */
             this.clientNameInput.value = this.apiService.clientId;
             return;
         }
@@ -227,19 +267,16 @@ class MiraDesktop {
                 connected: this.apiService.isConnected
             });
 
-            /** Show success message and make text appear gray/placeholder-like */
             this.showMessage(`Client name updated to: ${this.apiService.clientId}`, 'info');
             this.clientNameInput.style.color = '#999';
             this.clientNameInput.value = this.apiService.clientId;
 
-            /** Reset text color after a short delay */
             setTimeout(() => {
                 this.clientNameInput.style.color = '';
             }, 2000);
         }
 
         else {
-            /** Revert input on failure */
             this.clientNameInput.value = this.apiService.clientId;
             this.log('warn', 'Failed to update client name - reverted to previous name');
             this.showMessage('Failed to update client name', 'error');
@@ -304,72 +341,12 @@ class MiraDesktop {
         }
     }
 
-    /**
-     * Check connection to available servers
-     * Wrapper method that delegates to API service
-     */
-    async checkConnection() {
-        return this.apiService.checkConnection();
-    }
-
-    /**
-     * Register client with backend service
-     * Uses ApiService for proper error handling and response parsing
-     */
-    async registerClient() {
-        try {
-            const success = await this.apiService.registerClient();
-
-            if (success) {
-                this.log('info', SUCCESS_MESSAGES.REGISTRATION);
-                this.debugLog('api', 'Client registration successful', { clientId: API_CONFIG.CLIENT_ID });
-            }
-
-            else {
-                this.log('error', 'Failed to register client');
-            }
-        }
-
-        catch (error) {
-            this.log('error', `Client registration error: ${error.message}`);
-        }
-    }
-
-    /**
-     * Deregister client from backend service
-     * Uses ApiService for proper cleanup and error handling
-     */
-    async deregisterClient() {
-        if (this.isDeregistering) {
-            return;
-        }
-
-        this.isDeregistering = true;
-        try {
-            const success = await this.apiService.deregisterClient();
-
-            if (success) {
-                this.log('info', 'Client deregistered successfully');
-                this.debugLog('api', 'Client deregistration successful', { clientId: API_CONFIG.CLIENT_ID });
-            }
-
-            else {
-                this.log('error', 'Failed to deregister client');
-            }
-        }
-
-        catch (error) {
-            this.log('error', `Client deregistration error: ${error.message}`);
-        }
-    }
-
     async toggleListening() {
         if (!this.apiService.isConnected) {
             this.showMessage('Please wait for connection to the backend server');
             return;
         }
 
-        // Wait until audio capture is not toggling (ready)
         async function waitTilAudioCaptureReady(ctx) {
             while (ctx.isTogglingAudioCapture) {
                 console.log('Waiting for audio capture to be ready...');
@@ -384,14 +361,12 @@ class MiraDesktop {
         this.isToggling = true;
 
         try {
-            /** Provide immediate UI feedback */
             this.micButton.disabled = true;
             this.micButton.style.opacity = UI_CONFIG.OPACITY.DISABLED;
             this.micStatusText.textContent = this.isListening ? 'Stopping...' : 'Starting...';
             this.isTogglingAudioCapture = true;
 
             if (this.isListening) {
-                /** Send disable request to backend - state management will handle cleanup */
                 const success = await this.apiService.disableService();
 
                 if (!success) {
@@ -400,7 +375,6 @@ class MiraDesktop {
             }
 
             else {
-                /** Send enable request to backend - state management will handle audio start */
                 const success = await this.apiService.enableService();
 
                 if (!success) {
@@ -415,7 +389,6 @@ class MiraDesktop {
         catch (error) {
             this.log('error', 'Error toggling listening', error);
 
-            /** Determine user-friendly error message */
             let errorMessage = 'Error: ' + error.message;
             if (error.message.includes('Permission denied') || error.message.includes('NotAllowedError')) {
                 errorMessage = ERROR_MESSAGES.AUDIO.PERMISSION_DENIED;
@@ -431,10 +404,8 @@ class MiraDesktop {
 
             this.showMessage(errorMessage, 'error');
 
-            /** Ensure UI reflects actual state after error */
             this.updateListeningUI(this.isListening);
 
-            /** Log detailed error information for debugging */
             console.error('Toggle listening error details:', {
                 message: error.message,
                 isConnected: this.apiService.isConnected,
@@ -448,6 +419,151 @@ class MiraDesktop {
             this.micButton.disabled = false;
             this.updateListeningUI(this.isListening);
             this.isToggling = false;
+        }
+    }
+
+
+
+    /**
+     * Unified method to start audio with VAD for both recording and training
+     * @param {string} mode - 'recording' or 'training'
+     * @param {Object} callbacks - Callback functions for audio events
+     */
+    async startAudio(mode, callbacks = {}) {
+        if (this.sharedVAD) {
+            throw new Error('Audio system is already active');
+        }
+
+        try {
+            this.log('info', `Starting audio in ${mode} mode`);
+            
+            await this.waitForVADLibrary();
+
+            if (typeof vad === 'undefined' || !vad.MicVAD) {
+                throw new Error('Voice Activity Detection library is not available');
+            }
+
+            const { MicVAD } = vad;
+            const sampleRate = AUDIO_CONFIG.VAD_SETTINGS.SAMPLE_RATE;
+            const frameSamples = AUDIO_CONFIG.VAD_SETTINGS.FRAME_SAMPLES;
+            const targetSilenceMs = AUDIO_CONFIG.VAD_SETTINGS.TARGET_SILENCE_MS;
+            const redemptionFrames = Math.max(1, Math.round((targetSilenceMs * sampleRate) / (frameSamples * 1000)));
+
+            this.vadMode = mode;
+
+            const vadConfig = {
+                model: 'legacy',
+                positiveSpeechThreshold: mode === 'training' ? 0.3 : AUDIO_CONFIG.VAD_THRESHOLDS.POSITIVE_SPEECH,
+                negativeSpeechThreshold: mode === 'training' ? 0.1 : AUDIO_CONFIG.VAD_THRESHOLDS.NEGATIVE_SPEECH,
+                redemptionFrames: redemptionFrames,
+                frameSamples: frameSamples,
+                preSpeechPadFrames: AUDIO_CONFIG.VAD_SETTINGS.PRE_SPEECH_PAD_FRAMES,
+                minSpeechFrames: AUDIO_CONFIG.VAD_SETTINGS.MIN_SPEECH_FRAMES,
+
+                additionalAudioConstraints: {
+                    sampleRate: AUDIO_CONFIG.CONSTRAINTS.SAMPLE_RATE,
+                    echoCancellation: AUDIO_CONFIG.CONSTRAINTS.ECHO_CANCELLATION,
+                    noiseSuppression: AUDIO_CONFIG.CONSTRAINTS.NOISE_SUPPRESSION,
+                    autoGainControl: AUDIO_CONFIG.CONSTRAINTS.AUTO_GAIN_CONTROL,
+                    channelCount: AUDIO_CONFIG.CONSTRAINTS.CHANNELS,
+                    googEchoCancellation: AUDIO_CONFIG.CONSTRAINTS.GOOGLE_ECHO_CANCELLATION,
+                    googAutoGainControl: AUDIO_CONFIG.CONSTRAINTS.GOOGLE_AUTO_GAIN_CONTROL,
+                    googNoiseSuppression: AUDIO_CONFIG.CONSTRAINTS.GOOGLE_NOISE_SUPPRESSION,
+                    googHighpassFilter: AUDIO_CONFIG.CONSTRAINTS.GOOGLE_HIGHPASS_FILTER,
+                    googAudioMirroring: AUDIO_CONFIG.CONSTRAINTS.GOOGLE_AUDIO_MIRRORING,
+                    latency: AUDIO_CONFIG.CONSTRAINTS.LATENCY,
+                },
+
+                onSpeechStart: callbacks.onSpeechStart || (() => {
+                    if (mode === 'recording') {
+                        this.updateVADStatus('speaking');
+                    }
+                }),
+
+                onSpeechEnd: callbacks.onSpeechEnd || ((audio) => {
+                    if (mode === 'recording') {
+                        this.updateVADStatus('processing');
+                        if (audio && audio.length > 0) {
+                            this.processAndSendOptimizedAudio(audio);
+                        } else {
+                            this.updateVADStatus('waiting');
+                        }
+                    }
+                }),
+
+                onVADMisfire: callbacks.onVADMisfire || (() => {
+                    if (mode === 'recording') {
+                        this.updateVADStatus('waiting');
+                    }
+                }),
+
+                onFrameProcessed: callbacks.onFrameProcessed || ((probabilities) => {
+                    if (DEBUG_CONFIG.DEBUG_MODE && mode === 'recording') {
+                        this.debugLog('vad', 'Frame processed', {
+                            probabilities: probabilities,
+                            isRecording: this.isRecording,
+                            vadStatus: this.micStatusText?.textContent,
+                            mode: this.vadMode
+                        });
+                    }
+                }),
+
+                onError: callbacks.onError || ((error) => {
+                    this.log('error', `VAD internal error in ${mode} mode`, error);
+                    this.showMessage(`Voice detection error: ${error.message}`, 'error');
+                })
+            };
+
+            this.sharedVAD = await MicVAD.new(vadConfig);
+            await this.sharedVAD.start();
+
+            if (mode === 'recording') {
+                this.micVAD = this.sharedVAD;
+                this.isRecording = true;
+                this.updateVADStatus('waiting');
+            }
+
+            this.log('info', `Audio started successfully in ${mode} mode`);
+            return this.sharedVAD;
+
+        } catch (error) {
+            this.log('error', `Error starting audio in ${mode} mode`, error);
+            this.vadMode = null;
+            this.sharedVAD = null;
+            throw error;
+        }
+    }
+
+    /**
+     * Stop the shared VAD system
+     */
+    async stopAudio() {
+        if (!this.sharedVAD) {
+            return;
+        }
+
+        try {
+            this.log('info', `Stopping audio in ${this.vadMode} mode`);
+            
+            await this.sharedVAD.destroy();
+            
+            if (this.vadMode === 'recording') {
+                this.micVAD = null;
+                this.isRecording = false;
+                this.updateVADStatus('stopped');
+            }
+
+            this.sharedVAD = null;
+            this.vadMode = null;
+
+            this.log('info', 'Audio stopped successfully');
+
+        } catch (error) {
+            this.log('error', 'Error stopping shared VAD', error);
+            this.sharedVAD = null;
+            this.vadMode = null;
+            this.micVAD = null;
+            this.isRecording = false;
         }
     }
 
@@ -476,124 +592,11 @@ class MiraDesktop {
     async startAudioCapture() {
         try {
             this.log('info', 'Starting audio capture process');
-
             this.isTogglingAudioCapture = true;
-            await this.waitForVADLibrary();
 
-            if (typeof vad === 'undefined') {
-                console.error('VAD library not found. Library loading may have failed.');
-                const errorMsg = window.vadLibraryLoadError || 'Voice Activity Detection library is not available. Please refresh the page and try again.';
-                throw new Error(errorMsg);
-            }
+            await this.startAudio('recording');
 
-            if (!vad.MicVAD) {
-                console.error('MicVAD not found in VAD library object:', Object.keys(vad));
-                throw new Error('Voice Activity Detection module is incomplete. Please refresh the page and try again.');
-            }
-
-            const { MicVAD } = vad;
-            const sampleRate = AUDIO_CONFIG.VAD_SETTINGS.SAMPLE_RATE;
-            const frameSamples = AUDIO_CONFIG.VAD_SETTINGS.FRAME_SAMPLES;
-            const targetSilenceMs = AUDIO_CONFIG.VAD_SETTINGS.TARGET_SILENCE_MS;
-            const redemptionFrames = Math.max(1, Math.round((targetSilenceMs * sampleRate) / (frameSamples * 1000)));
-
-            const vadInitPromise = MicVAD.new({
-                model: 'legacy',
-
-                /** Optimized thresholds for better noise rejection */
-                positiveSpeechThreshold: AUDIO_CONFIG.VAD_THRESHOLDS.POSITIVE_SPEECH,
-                negativeSpeechThreshold: AUDIO_CONFIG.VAD_THRESHOLDS.NEGATIVE_SPEECH,
-
-                redemptionFrames: redemptionFrames,
-
-                /** Audio quality settings optimized for interaction */
-                frameSamples: frameSamples,
-                preSpeechPadFrames: AUDIO_CONFIG.VAD_SETTINGS.PRE_SPEECH_PAD_FRAMES,
-                minSpeechFrames: AUDIO_CONFIG.VAD_SETTINGS.MIN_SPEECH_FRAMES,
-
-                /** Enhanced audio constraints for maximum quality */
-                additionalAudioConstraints: {
-                    sampleRate: AUDIO_CONFIG.CONSTRAINTS.SAMPLE_RATE,
-                    echoCancellation: AUDIO_CONFIG.CONSTRAINTS.ECHO_CANCELLATION,
-                    noiseSuppression: AUDIO_CONFIG.CONSTRAINTS.NOISE_SUPPRESSION,
-                    autoGainControl: AUDIO_CONFIG.CONSTRAINTS.AUTO_GAIN_CONTROL,
-                    channelCount: AUDIO_CONFIG.CONSTRAINTS.CHANNELS,
-
-                    /** Advanced constraints for better audio quality */
-                    googEchoCancellation: AUDIO_CONFIG.CONSTRAINTS.GOOGLE_ECHO_CANCELLATION,
-                    googAutoGainControl: AUDIO_CONFIG.CONSTRAINTS.GOOGLE_AUTO_GAIN_CONTROL,
-                    googNoiseSuppression: AUDIO_CONFIG.CONSTRAINTS.GOOGLE_NOISE_SUPPRESSION,
-                    googHighpassFilter: AUDIO_CONFIG.CONSTRAINTS.GOOGLE_HIGHPASS_FILTER,
-                    googAudioMirroring: AUDIO_CONFIG.CONSTRAINTS.GOOGLE_AUDIO_MIRRORING,
-                    latency: AUDIO_CONFIG.CONSTRAINTS.LATENCY,
-                },
-
-                onSpeechStart: () => {
-                    this.updateVADStatus('speaking');
-                },
-
-                onSpeechEnd: (audio) => {
-                    try {
-                        this.updateVADStatus('processing');
-
-                        /** Validate and optimize audio data before sending */
-                        if (audio && audio.length > 0) {
-                            this.processAndSendOptimizedAudio(audio);
-                        }
-
-                        else {
-                            this.updateVADStatus('waiting');
-                        }
-                    }
-
-                    catch (err) {
-                        this.log('error', 'VAD error in onSpeechEnd callback', err);
-                        this.updateVADStatus('waiting');
-                    }
-                },
-
-                onVADMisfire: () => {
-                    this.updateVADStatus('waiting');
-                },
-
-                onFrameProcessed: (probabilities) => {
-                    /** Enhanced debug mode logging for frame processing */
-                    if (DEBUG_CONFIG.DEBUG_MODE) {
-                        this.debugLog('vad', 'Frame processed', {
-                            probabilities: probabilities,
-                            isRecording: this.isRecording,
-                            vadStatus: this.micStatusText?.textContent,
-                            audioOptimization: {
-                                enableAdvancedNoiseReduction: AUDIO_CONFIG.OPTIMIZATION.ENABLE_ADVANCED_NOISE_REDUCTION,
-                                enableDynamicGainControl: AUDIO_CONFIG.OPTIMIZATION.ENABLE_DYNAMIC_GAIN_CONTROL,
-                                enableSpectralGating: AUDIO_CONFIG.OPTIMIZATION.ENABLE_SPECTRAL_GATING,
-                                noiseFloor: AUDIO_CONFIG.OPTIMIZATION.NOISE_FLOOR,
-                                signalThreshold: AUDIO_CONFIG.OPTIMIZATION.SIGNAL_THRESHOLD,
-                                adaptiveThresholds: AUDIO_CONFIG.OPTIMIZATION.ENABLE_ADAPTIVE_THRESHOLDS,
-                                environmentalNoise: AUDIO_CONFIG.OPTIMIZATION.ENVIRONMENTAL_NOISE,
-                                lastNoiseAnalysis: AUDIO_CONFIG.OPTIMIZATION.LAST_NOISE_ANALYSIS
-                            }
-                        });
-                    }
-                },
-
-                onError: (error) => {
-                    this.log('error', 'VAD internal error', error);
-                    this.showMessage('Voice detection error: ' + error.message, 'error');
-                }
-            });
-
-            const timeoutPromise = new Promise((_, reject) => {
-                setTimeout(() => reject(new Error('VAD initialization timeout after 10 seconds')), 10000);
-            });
-
-            this.micVAD = await Promise.race([vadInitPromise, timeoutPromise]);
-            await this.micVAD.start();
-            this.isRecording = true;
-            this.updateVADStatus('waiting');
-        }
-
-        catch (error) {
+        } catch (error) {
             this.log('error', 'Error starting VAD audio capture', error);
 
             let errorMessage = ERROR_MESSAGES.AUDIO.VAD_INIT_FAILED;
@@ -607,9 +610,7 @@ class MiraDesktop {
                 errorMessage = ERROR_MESSAGES.AUDIO.DEVICE_NOT_FOUND;
             } else if (error.message.includes('MicVAD')) {
                 errorMessage = 'Voice detection module is incomplete. Please refresh the page and try again.';
-            }
-
-            else {
+            } else {
                 errorMessage = `Voice detection error: ${error.message}`;
             }
 
@@ -622,9 +623,7 @@ class MiraDesktop {
 
             this.showMessage(errorMessage, 'error');
             throw error;
-        }
-
-        finally {
+        } finally {
             this.isTogglingAudioCapture = false;
         }
     }
@@ -634,74 +633,38 @@ class MiraDesktop {
      * Enhanced error handling and debugging for stop recording functionality
      */
     async stopAudioCapture() {
-
         try {
             this.log('info', 'Stopping audio capture process');
-            /** Set recording state to false immediately to prevent new processing */
-            this.isRecording = false;
             this.isTogglingAudioCapture = true;
 
-            if (this.micVAD) {
-                this.debugLog('audio', 'VAD destruction initiated', {
-                    vadExists: !!this.micVAD,
-                    isRecording: this.isRecording
-                });
+            await this.stopAudio();
 
-                try {
-                    /** Call destroy method on VAD */
-                    await this.micVAD.destroy();
-                }
-
-                catch (vadError) {
-                    this.log('error', 'Error calling VAD.destroy()', vadError);
-                    /** Continue with cleanup even if destroy fails */
-                }
-
-                /** Additional cleanup: manually stop any remaining audio tracks */
-                await this.forceStopAllAudioTracks();
-
-                /** Clear the VAD reference */
-                this.micVAD = null;
-            }
-
-            /** Verify that recording has actually stopped */
-            await this.verifyRecordingIsStopped();
-
-            /** Update VAD status */
-            this.updateVADStatus('stopped');
             this.log('info', 'Audio capture stopped successfully');
 
-        }
-
-        catch (error) {
+        } catch (error) {
             this.log('error', 'Error stopping VAD audio capture', error);
 
-            /** Force cleanup even if there are errors */
             try {
                 await this.forceStopAllAudioTracks();
                 this.micVAD = null;
                 this.isRecording = false;
+                this.sharedVAD = null;
+                this.vadMode = null;
                 this.updateVADStatus('stopped');
                 this.log('info', 'Forced cleanup completed');
-            }
-
-            catch (forceError) {
+            } catch (forceError) {
                 this.log('error', 'Error during forced cleanup', forceError);
             }
 
-            /** Log detailed error information for debugging */
             this.debugLog('audio', 'Audio capture stop error details', {
                 message: error.message,
                 name: error.name,
                 stack: error.stack,
                 isRecording: this.isRecording,
-                micVAD: !!this.micVAD
+                sharedVAD: !!this.sharedVAD
             });
 
-            /** Don't rethrow the error - we want to ensure cleanup happens */
-        }
-
-        finally {
+        } finally {
             this.isTogglingAudioCapture = false;
         }
     }
@@ -711,32 +674,26 @@ class MiraDesktop {
      */
     async forceStopAllAudioTracks() {
         try {
-            /** Get all media devices */
             const mediaDevices = navigator.mediaDevices;
             if (!mediaDevices || !mediaDevices.enumerateDevices) {
                 return;
             }
 
-            /** Check if there are any active media streams and verify cleanup */
 
-            /** Try to detect active streams by checking permissions */
             try {
                 await navigator.permissions.query({ name: 'microphone' });
             }
 
-            catch {
-                /** Ignore permission check errors - this is just a verification step */
+            catch (error) {
+                console.debug('Error during stream verification', error);
             }
 
-            /** The VAD library should clean up its own streams, but let's add a verification step */
-            /** We'll try to create a new temporary stream to verify microphone access is properly released */
             await this.verifyMicrophoneIsReleased();
 
         }
 
         catch (error) {
             console.error('Error during audio track cleanup:', error);
-            /** Continue execution - this is a best-effort cleanup */
         }
     }
 
@@ -745,7 +702,6 @@ class MiraDesktop {
      */
     async verifyMicrophoneIsReleased() {
         try {
-            /** Try to get microphone access briefly to verify it's not locked */
             const testStream = await navigator.mediaDevices.getUserMedia({
                 audio: {
                     sampleRate: 16000,
@@ -753,7 +709,6 @@ class MiraDesktop {
                 }
             });
 
-            /** Immediately stop the test stream */
             if (testStream) {
                 testStream.getTracks().forEach(track => {
                     track.stop();
@@ -764,11 +719,10 @@ class MiraDesktop {
 
         catch (error) {
             if (error.name === 'NotAllowedError') {
-                /** Expected if user has denied access */
+                console.debug('Microphone access was denied');
             } else if (error.name === 'NotFoundError') {
-                /** No microphone found */
+                console.debug('No microphone found');
             } else if (error.name === 'AbortError' || error.message.includes('busy')) {
-                /** This suggests the microphone wasn't properly released */
                 throw new Error('Microphone appears to still be in use after VAD destruction');
             }
         }
@@ -778,7 +732,6 @@ class MiraDesktop {
      * Verify that recording has actually stopped
      */
     async verifyRecordingIsStopped() {
-        // TODO: Need to implement
 
         if (this.isRecording) {
             console.log('Recording state verification - isRecording:', this.isRecording, 'micVAD:', !!this.micVAD);
@@ -848,29 +801,23 @@ class MiraDesktop {
      */
     async processAndSendOptimizedAudio(audioFloat32Array) {
         try {
-            /** Step 1: Analyze audio quality */
             const audioAnalysis = this.analyzeAudioQuality(audioFloat32Array);
 
-            /** Step 2: Apply noise reduction if enabled */
             let processedAudio = audioFloat32Array;
             if (AUDIO_CONFIG.OPTIMIZATION.ENABLE_ADVANCED_NOISE_REDUCTION) {
                 processedAudio = this.applyNoiseReduction(processedAudio, audioAnalysis);
             }
 
-            /** Step 3: Apply dynamic gain control */
             if (AUDIO_CONFIG.OPTIMIZATION.ENABLE_DYNAMIC_GAIN_CONTROL) {
                 processedAudio = this.applyDynamicGainControl(processedAudio, audioAnalysis);
             }
 
-            /** Step 4: Apply spectral gating for further noise reduction */
             if (AUDIO_CONFIG.OPTIMIZATION.ENABLE_SPECTRAL_GATING) {
                 processedAudio = this.applySpectralGating(processedAudio, audioAnalysis);
             }
 
-            /** Step 5: Final quality check */
             const finalAnalysis = this.analyzeAudioQuality(processedAudio);
 
-            /** Step 6: Only send if audio quality is sufficient */
             if (finalAnalysis.snr > AUDIO_CONFIG.OPTIMIZATION.SIGNAL_THRESHOLD) {
                 await this.sendVADAudioToBackend(processedAudio);
             }
@@ -883,7 +830,6 @@ class MiraDesktop {
 
         catch (error) {
             console.error('Error in audio optimization pipeline:', error);
-            /** Fallback to original audio if processing fails */
             await this.sendVADAudioToBackend(audioFloat32Array);
         }
     }
@@ -897,13 +843,11 @@ class MiraDesktop {
         let maxAmplitude = 0;
         let silentSamples = 0;
 
-        /** Calculate RMS and find peak amplitude */
         for (let i = 0; i < samples; i++) {
             const sample = Math.abs(audioFloat32Array[i]);
             sumSquares += sample * sample;
             maxAmplitude = Math.max(maxAmplitude, sample);
 
-            /** Threshold for "silent" samples */
             if (sample < 0.001) {
                 silentSamples++;
             }
@@ -912,14 +856,11 @@ class MiraDesktop {
         const rms = Math.sqrt(sumSquares / samples);
         const energy = sumSquares / samples;
 
-        /** Estimate SNR (simplified calculation) */
         const speechPower = rms * rms;
-        /** Estimate noise floor */
         const noisePower = silentSamples > samples * 0.1 ?
             Math.max(speechPower * 0.01, 1e-10) : speechPower * 0.1;
         const snr = 10 * Math.log10(speechPower / noisePower);
 
-        /** Calculate dynamic range */
         const dynamicRange = 20 * Math.log10(maxAmplitude / Math.max(rms, 1e-10));
 
         return {
@@ -941,22 +882,18 @@ class MiraDesktop {
         }
 
         const result = new Float32Array(audioFloat32Array.length);
-        /** Adaptive noise threshold */
         const noiseThreshold = analysis.rms * 0.3;
 
-        /** Simple spectral subtraction approach */
         for (let i = 0; i < audioFloat32Array.length; i++) {
             const sample = audioFloat32Array[i];
             const sampleAbs = Math.abs(sample);
 
             if (sampleAbs > noiseThreshold) {
-                /** Keep strong signals, apply gentle filtering to weak ones */
                 const gain = Math.min(1.0, sampleAbs / noiseThreshold);
                 result[i] = sample * gain;
             }
 
             else {
-                /** Aggressive reduction for likely noise */
                 result[i] = sample * 0.1;
             }
         }
@@ -972,7 +909,6 @@ class MiraDesktop {
             return audioFloat32Array;
         }
 
-        /** Calculate target RMS level - optimal level for interaction */
         const targetRMS = 0.15;
         const gainFactor = Math.min(3.0, targetRMS / Math.max(analysis.rms, 0.001));
 
@@ -992,19 +928,16 @@ class MiraDesktop {
         const windowSize = Math.min(512, Math.floor(audioFloat32Array.length / 8));
         const gateThreshold = analysis.rms * 0.2;
 
-        /** Apply gating in overlapping windows */
         for (let i = 0; i < audioFloat32Array.length; i++) {
             const windowStart = Math.max(0, i - windowSize / 2);
             const windowEnd = Math.min(audioFloat32Array.length, i + windowSize / 2);
 
-            /** Calculate local RMS */
             let localRMS = 0;
             for (let j = windowStart; j < windowEnd; j++) {
                 localRMS += audioFloat32Array[j] * audioFloat32Array[j];
             }
             localRMS = Math.sqrt(localRMS / (windowEnd - windowStart));
 
-            /** Apply gate */
             const gateGain = localRMS > gateThreshold ? 1.0 : 0.3;
             result[i] = audioFloat32Array[i] * gateGain;
         }
@@ -1031,16 +964,13 @@ class MiraDesktop {
                 throw new Error('Invalid audio data format');
             }
 
-            /** Convert Float32Array to 16-bit PCM for backend compatibility */
             const audioInt16 = new Int16Array(audioFloat32Array.length);
             let validSamples = 0;
 
             for (let i = 0; i < audioFloat32Array.length; i++) {
-                /** Clamp and convert to 16-bit signed integer */
                 const sample = Math.max(-1, Math.min(1, audioFloat32Array[i]));
                 audioInt16[i] = Math.round(sample * 32767);
 
-                /** Count non-zero samples to validate audio content */
                 if (Math.abs(sample) > 0.001) {
                     validSamples++;
                 }
@@ -1051,37 +981,41 @@ class MiraDesktop {
                 this.log('warn', `Audio appears to be mostly silence, validSamples: ${validSamples} of ${audioFloat32Array.length}`);
             }
 
-            /** Convert to bytes for backend (little-endian) */
             const audioBytes = new Uint8Array(audioInt16.buffer);
 
-            /** Validate connection before sending */
             if (!this.apiService.isConnected || !this.apiService) {
                 throw new Error(ERROR_MESSAGES.BACKEND.SERVICE_UNAVAILABLE);
             }
 
-            /** Use ApiService to register interaction */
             const interactionData = await this.apiService.registerInteraction(audioBytes.buffer, 'wav');
 
             if (interactionData) {
-                this.audioProcessingStats.successfulRequests++;
-                this.audioProcessingStats.totalAudioSent++;
-                this.audioProcessingStats.totalAudioBytes += audioBytes.length;
-                this.audioProcessingStats.averageAudioDuration =
-                    ((this.audioProcessingStats.averageAudioDuration * (this.audioProcessingStats.totalAudioSent - 1)) +
-                        (audioFloat32Array.length / 16000)) / this.audioProcessingStats.totalAudioSent;
+                if (interactionData.type === 'message') {
+                    this.showMessage(interactionData.message, interactionData.level);
+                } else if (interactionData.id) {
+                    this.audioProcessingStats.successfulRequests++;
+                    this.audioProcessingStats.totalAudioSent++;
+                    this.audioProcessingStats.totalAudioBytes += audioBytes.length;
+                    this.audioProcessingStats.averageAudioDuration =
+                        ((this.audioProcessingStats.averageAudioDuration * (this.audioProcessingStats.totalAudioSent - 1)) +
+                            (audioFloat32Array.length / 16000)) / this.audioProcessingStats.totalAudioSent;
 
-                this.debugLog('audio', 'Audio interaction registered successfully', {
-                    audioLength: audioFloat32Array.length,
-                    audioBytes: audioBytes.length,
-                    interactionData: interactionData
-                });
-            }
+                    this.debugLog('audio', 'Audio interaction registered successfully', {
+                        audioLength: audioFloat32Array.length,
+                        audioBytes: audioBytes.length,
+                        interactionData: interactionData
+                    });
 
-            else {
+                    this.apiService.runInference(interactionData.id).catch(error => {
+                        this.debugLog('api', 'Failed to trigger inference pipeline', {
+                            interactionId: interactionData.id,
+                            error: error.message
+                        });
+                    });
+                }
+            } else {
                 this.audioProcessingStats.failedRequests++;
-                const errorMessage = 'Audio processing failed';
-                this.log('error', errorMessage);
-                this.showMessage('Failed to process audio. Please try again.', 'error');
+                this.debugLog('audio', 'Interaction returned null - likely voice disable command');
             }
 
         }
@@ -1095,7 +1029,7 @@ class MiraDesktop {
                 this.showMessage('Network error. Please check your connection to the backend.', 'error');
             } else if (error.message.includes('Backend connection lost')) {
                 this.showMessage('Connection to backend lost. Reconnecting...');
-                this.checkConnection();
+                this.apiService.checkConnection();
             }
 
             else {
@@ -1122,7 +1056,6 @@ class MiraDesktop {
 
         if (this.isListening && this.micStatusText) {
             const message = statusMessages[status] || 'Unknown status';
-            /** Only update specific statuses, maintain the main listening message for most cases */
             if (status === 'stopping') {
                 this.micStatusText.textContent = message;
             } else if (status === 'stopped') {
@@ -1162,8 +1095,6 @@ class MiraDesktop {
      * @param {Object} status - Status object with enabled property
      */
     async updateServerStatus(status) {
-        /** The manageListeningState function now handles actual listening state changes */
-        /** This function just updates the UI display if needed */
         this.log('info', `Server status updated: ${status.enabled ? 'enabled' : 'disabled'}`);
     }
 
@@ -1265,7 +1196,6 @@ class MiraDesktop {
 
         else {
             this.log('error', `Failed to fetch person ${interaction.speaker_id}`);
-            /** Create a fallback person object */
             personData = { name: 'Unknown Person', id: interaction.speaker_id };
         }
 
@@ -1280,7 +1210,6 @@ class MiraDesktop {
         const interactionElement = this.createInteractionElement(interaction);
         this.interactionContent.appendChild(interactionElement);
 
-        /** Scroll to bottom */
         this.interactionContent.scrollTop = this.interactionContent.scrollHeight;
     }
 
@@ -1328,8 +1257,8 @@ class MiraDesktop {
      * Uses ApiService for proper error handling
      */
     async clearInteractions() {
-        if (!this.apiService) {
-            this.log('error', 'Cannot clear interactions: API service not initialized');
+        if (!this.apiService.isConnected) {
+            this.log('error', 'Cannot clear interactions: not connected to backend');
             return;
         }
 
@@ -1422,7 +1351,6 @@ class MiraDesktop {
             gap: 8px;
         `;
 
-        /** Add CSS for smooth repositioning of notifications */
         const style = document.createElement('style');
         style.textContent = `
             #notificationContainer > * {
@@ -1436,15 +1364,34 @@ class MiraDesktop {
     showMessage(message, type = 'info') {
         console.log('Message:', message);
 
-        /** Create a simple toast notification for user feedback */
         const toast = document.createElement('div');
         toast.className = `toast toast-${type}`;
+
+        let backgroundColor;
+        let textColor = 'white';
+
+        switch (type) {
+            case 'error':
+                backgroundColor = '#ff4444';
+                break;
+            case 'warning':
+                backgroundColor = '#ffaa00';
+                break;
+            case 'agent':
+                backgroundColor = '#6366f1';
+                break;
+            case 'info':
+            default:
+                backgroundColor = '#00aa44';
+                break;
+        }
+
         toast.style.cssText = `
             position: relative;
             max-width: 400px;
             padding: 12px 16px;
-            background: ${type === 'error' ? '#ff4444' : type === 'warning' ? '#ffaa00' : '#00aa44'};
-            color: white;
+            background: ${backgroundColor};
+            color: ${textColor};
             border-radius: 8px;
             box-shadow: 0 4px 12px rgba(0,0,0,0.3);
             font-size: 14px;
@@ -1459,17 +1406,14 @@ class MiraDesktop {
 
         toast.textContent = message;
 
-        /** Add to notification container instead of body */
         this.notificationContainer.appendChild(toast);
         this.activeNotifications.push(toast);
 
-        /** Animate in */
         setTimeout(() => {
             toast.style.opacity = '1';
             toast.style.transform = 'translateX(0)';
         }, 10);
 
-        /** Auto-remove non-error notifications */
         if (type !== 'error') {
             const duration = Math.max(3000, Math.min(8000, message.length * 50));
             setTimeout(() => {
@@ -1477,7 +1421,6 @@ class MiraDesktop {
             }, duration);
         }
 
-        /** Click to dismiss */
         toast.addEventListener('click', () => {
             this.removeNotification(toast);
         });
@@ -1497,7 +1440,6 @@ class MiraDesktop {
             if (toast.parentNode) {
                 toast.parentNode.removeChild(toast);
 
-                /** Remove from active notifications array */
                 const index = this.activeNotifications.indexOf(toast);
                 if (index > -1) {
                     this.activeNotifications.splice(index, 1);
@@ -1506,23 +1448,374 @@ class MiraDesktop {
         }, 300);
     }
 
-    async cleanup() {
+    /**
+     * Show speaker training dialog
+     */
+    async showTrainingDialog() {
+        if (this.isTraining) {
+            this.showMessage('Training is already in progress', 'warning');
+            return;
+        }
+
         try {
-            /** Stop recording first */
-            if (this.isRecording && this.micVAD) {
-                await this.stopAudioCapture();
+            const persons = await this.apiService.getPersons();
+            this.populateSpeakerDropdown(persons);
+
+            this.trainingOverlay.style.display = 'flex';
+            requestAnimationFrame(() => {
+                this.trainingOverlay.classList.add('show');
+            });
+        } catch (error) {
+            this.showMessage('Failed to load speakers: ' + error.message, 'error');
+        }
+    }
+
+    /**
+     * Hide speaker training dialog
+     */
+    hideTrainingDialog() {
+        this.trainingOverlay.classList.remove('show');
+        setTimeout(() => {
+            this.trainingOverlay.style.display = 'none';
+            this.resetTrainingState();
+        }, 300);
+    }
+
+    /**
+     * Populate speaker dropdown with available speakers
+     */
+    populateSpeakerDropdown(persons) {
+        this.speakerSelect.innerHTML = '<option value="">Choose a person...</option>';
+
+        persons.forEach(person => {
+            const option = document.createElement('option');
+            option.value = person.id;
+            option.textContent = person.name || `Person ${person.index}`;
+            this.speakerSelect.appendChild(option);
+        });
+    }
+
+    /**
+     * Handle speaker selection change
+     */
+    handleSpeakerSelection() {
+        const selectedId = this.speakerSelect.value;
+        if (selectedId) {
+            this.selectedSpeaker = selectedId;
+            const selectedOption = this.speakerSelect.selectedOptions[0];
+            const speakerName = selectedOption.textContent;
+
+            const hasRealName = speakerName && !speakerName.startsWith('Person ');
+            this.requiresNameInput = !hasRealName;
+            this.currentSpeakerName = hasRealName ? speakerName : '';
+
+            this.speakerNameDisplay.textContent = this.currentSpeakerName || 'Unnamed Speaker';
+            this.floatingSpeakerName.style.display = 'flex';
+
+            this.editNameBtn.style.display = 'block';
+
+            this.startTrainingBtn.disabled = this.requiresNameInput && !this.currentSpeakerName;
+        } else {
+            this.selectedSpeaker = null;
+            this.currentSpeakerName = '';
+            this.requiresNameInput = false;
+            this.floatingSpeakerName.style.display = 'none';
+            this.startTrainingBtn.disabled = true;
+        }
+    }
+
+    /**
+     * Show name editing modal
+     */
+    showNameEditModal() {
+        this.nameEditInput.value = this.currentSpeakerName;
+        this.nameEditModal.style.display = 'flex';
+        setTimeout(() => {
+            this.nameEditInput.focus();
+            this.nameEditInput.select();
+        }, 100);
+    }
+
+    /**
+     * Hide name editing modal
+     */
+    hideNameEditModal() {
+        this.nameEditModal.style.display = 'none';
+        this.nameEditInput.value = '';
+    }
+
+    /**
+     * Confirm name edit
+     */
+    confirmNameEdit() {
+        const newName = this.nameEditInput.value.trim();
+        if (newName) {
+            this.currentSpeakerName = newName;
+            this.speakerNameDisplay.textContent = newName;
+            this.startTrainingBtn.disabled = false;
+            this.hideNameEditModal();
+        } else if (this.requiresNameInput) {
+            this.showMessage('Speaker name is required', 'error');
+        } else {
+            this.hideNameEditModal();
+        }
+    }
+
+    /**
+     * End training due to server disconnection
+     */
+    async endTrainingDueToDisconnection() {
+        if (!this.isTraining) return;
+
+        this.showMessage('Training ended due to server disconnection', 'error');
+
+        await this.resetTrainingRecording();
+        this.hideTrainingDialog();
+
+    }
+    async startTrainingProcess() {
+        if (!this.selectedSpeaker) {
+            this.showMessage('Please select a speaker first', 'error');
+            return;
+        }
+
+        if (this.requiresNameInput && !this.currentSpeakerName) {
+            this.showMessage('Please provide a name for the speaker', 'error');
+            this.showNameEditModal();
+            return;
+        }
+
+        try {
+            this.isTraining = true;
+            this.currentTrainingStep = 0;
+            this.trainingRecordings = [];
+
+            if (this.isListening) {
+                await this.apiService.disableService();
             }
 
-            /** Clear interaction interval */
+            this.trainingProgress.style.display = 'block';
+            document.querySelector('.speaker-selection').style.display = 'none';
+            document.querySelector('.training-controls').style.display = 'none';
+
+            const trainingBox = document.querySelector('.training-box');
+            trainingBox.style.transform = 'translateX(-60px)';
+
+            setTimeout(() => {
+                this.trainingPrompt.classList.add('visible');
+            }, 200);
+
+            this.showCurrentPrompt();
+        } catch (error) {
+            this.showMessage('Failed to start training: ' + error.message, 'error');
+            this.isTraining = false;
+        }
+    }
+
+    /**
+     * Show current training prompt
+     */
+    showCurrentPrompt() {
+        const stepNumber = this.currentTrainingStep + 1;
+        const totalSteps = this.trainingPrompts.length;
+
+        this.progressText.textContent = `Step ${stepNumber} of ${totalSteps}`;
+        this.progressFill.style.width = `${(stepNumber - 1) / totalSteps * 100}%`;
+        this.promptText.textContent = this.trainingPrompts[this.currentTrainingStep];
+
+        this.recordBtn.innerHTML = '<i class="fas fa-microphone"></i><span>Click to Record</span>';
+        this.recordBtn.disabled = false;
+        this.recordBtn.classList.remove('recording');
+    }
+
+    /**
+     * Handle training recording
+     */
+    async handleTrainingRecord() {
+        if (this.vadMode !== 'training') {
+            await this.startTrainingRecording();
+        } else {
+            await this.stopTrainingRecording();
+        }
+    }
+
+    /**
+     * Start training recording using shared VAD
+     */
+    async startTrainingRecording() {
+        try {
+            this.currentTrainingAudio = null;
+
+            await this.startAudio('training', {
+                onSpeechEnd: (audio) => {
+                    this.currentTrainingAudio = audio;
+                    this.stopTrainingRecording();
+                },
+
+                onError: (error) => {
+                    this.showMessage('Recording error: ' + error.message, 'error');
+                    this.resetTrainingRecording();
+                }
+            });
+
+            this.recordBtn.innerHTML = '<i class="fas fa-stop"></i><span>Recording... Click to Stop</span>';
+            this.recordBtn.classList.add('recording');
+
+        } catch (error) {
+            this.showMessage('Failed to start recording: ' + error.message, 'error');
+            this.resetTrainingRecording();
+        }
+    }
+
+    /**
+     * Stop training recording and process audio
+     */
+    async stopTrainingRecording() {
+        if (this.vadMode !== 'training') return;
+
+        try {
+            await this.stopAudio();
+
+            this.recordBtn.innerHTML = '<i class="fas fa-check"></i><span>Processing...</span>';
+            this.recordBtn.disabled = true;
+            this.recordBtn.classList.remove('recording');
+
+            setTimeout(() => {
+                this.processTrainingRecording();
+            }, 500);
+
+        } catch (error) {
+            this.showMessage('Failed to stop recording: ' + error.message, 'error');
+            this.resetTrainingRecording();
+        }
+    }
+
+    /**
+     * Process the training recording
+     */
+    async processTrainingRecording() {
+        try {
+            if (!this.currentTrainingAudio || this.currentTrainingAudio.length === 0) {
+                this.showMessage('No audio recorded. Please try again.', 'error');
+                this.resetTrainingRecording();
+                return;
+            }
+
+            const audioInt16 = new Int16Array(this.currentTrainingAudio.length);
+            for (let i = 0; i < this.currentTrainingAudio.length; i++) {
+                const sample = Math.max(-1, Math.min(1, this.currentTrainingAudio[i]));
+                audioInt16[i] = Math.round(sample * 32767);
+            }
+            const audioData = audioInt16.buffer;
+
+            const expectedText = this.trainingPrompts[this.currentTrainingStep];
+            const success = await this.apiService.updatePerson(
+                this.selectedSpeaker,
+                this.currentSpeakerName,
+                audioData,
+                expectedText
+            );
+
+            if (success) {
+                this.trainingRecordings.push({
+                    step: this.currentTrainingStep,
+                    text: expectedText,
+                    audio: audioData
+                });
+
+                this.currentTrainingStep++;
+
+                if (this.currentTrainingStep < this.trainingPrompts.length) {
+                    setTimeout(() => {
+                        this.showCurrentPrompt();
+                    }, 1000);
+                } else {
+                    this.completeTraining();
+                }
+            } else {
+                this.showMessage('Failed to process recording. Please try again.', 'error');
+                this.resetTrainingRecording();
+            }
+        } catch (error) {
+            this.showMessage('Training error: ' + error.message, 'error');
+            this.resetTrainingRecording();
+        }
+    }
+
+    /**
+     * Complete the training process
+     */
+    async completeTraining() {
+        this.progressFill.style.width = '100%';
+        this.progressText.textContent = 'Training Complete!';
+
+        this.recordBtn.innerHTML = '<i class="fas fa-check-circle"></i><span>Training Successful</span>';
+        this.recordBtn.style.background = '#10b981';
+        this.recordBtn.disabled = true;
+
+        this.showMessage('Speaker training completed successfully!', 'info');``
+
+        setTimeout(() => {
+            this.hideTrainingDialog();
+        }, 2000);
+    }
+
+    /**
+     * Reset training recording state
+     */
+    resetTrainingRecording() {
+        if (this.vadMode === 'training') {
+            this.stopAudio().catch(() => { });
+        }
+
+        this.currentTrainingAudio = null;
+        this.recordBtn.innerHTML = '<i class="fas fa-microphone"></i><span>Click to Record</span>';
+        this.recordBtn.disabled = false;
+        this.recordBtn.classList.remove('recording');
+    }
+
+    /**
+     * Reset training state
+     */
+    resetTrainingState() {
+        this.isTraining = false;
+        this.currentTrainingStep = 0;
+        this.selectedSpeaker = null;
+        this.currentSpeakerName = '';
+        this.requiresNameInput = false;
+        this.trainingRecordings = [];
+
+        this.resetTrainingRecording();
+
+        this.trainingProgress.style.display = 'none';
+        this.floatingSpeakerName.style.display = 'none';
+        this.nameEditModal.style.display = 'none';
+        document.querySelector('.speaker-selection').style.display = 'block';
+        document.querySelector('.training-controls').style.display = 'flex';
+
+        this.trainingPrompt.classList.remove('visible');
+
+        const trainingBox = document.querySelector('.training-box');
+        trainingBox.style.transform = '';
+
+        this.speakerSelect.value = '';
+        this.startTrainingBtn.disabled = true;
+    }
+
+    async cleanup() {
+        try {
+            if (this.sharedVAD) {
+                await this.stopAudio();
+            }
+
             if (this.interactionInterval) {
                 clearInterval(this.interactionInterval);
                 this.interactionInterval = null;
             }
 
-            /** Stop listening service and deregister from backend */
             if (this.apiService.isRegistered) {
                 try {
-                    await this.deregisterClient();
+                    await this.apiService.deregisterClient();
 
                     if (this.isListening) {
                         await this.apiService.disableService();
@@ -1534,16 +1827,16 @@ class MiraDesktop {
                 }
             }
 
-            /** Clean up API service */
             if (this.apiService) {
                 this.apiService.destroy();
             }
 
-            /** Final state reset */
             this.isRecording = false;
             this.isListening = false;
             this.isToggling = false;
             this.isProcessingAudio = false;
+            this.vadMode = null;
+            this.sharedVAD = null;
 
         }
 
@@ -1566,25 +1859,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
     window.addEventListener('beforeunload', async () => {
         if (window.miraApp && window.miraApp.apiService.isRegistered && !window.miraApp.isDeregistering) {
-            /** Use ApiService for deregistration (fire and forget for beforeunload) */
-            window.miraApp.isDeregistering = true;
-            window.miraApp.apiService.deregisterClient().catch(() => { });
+            window.miraApp.apiService.destroy();
         }
     });
 
     window.addEventListener('unload', () => {
         if (window.miraApp && window.miraApp.isRegistered && !window.miraApp.isDeregistering) {
-            window.miraApp.isDeregistering = true;
-            if (window.miraApp.apiService) {
-                /** Use ApiService if available (fire and forget for unload) */
-                window.miraApp.apiService.deregisterClient().catch(() => { });
-            }
-
-            else {
-                /** Fallback to direct fetch for backwards compatibility */
-                const url = `${window.miraApp.baseUrl}/service/client/deregister/${encodeURIComponent(API_CONFIG.CLIENT_ID)}`;
-                fetch(url, { method: 'DELETE' }).catch(() => { });
-            }
+            window.miraApp.apiService.destroy();
         }
     });
 });
@@ -1594,55 +1875,6 @@ document.addEventListener('keydown', (e) => {
         e.preventDefault();
         if (window.miraApp && window.miraApp.isConnected) {
             window.miraApp.toggleListening();
-        }
-    }
-
-    /** Ctrl+Shift+D - Toggle debug mode */
-    if (e.ctrlKey && e.shiftKey && e.code === 'KeyD') {
-        e.preventDefault();
-        if (window.miraApp) {
-            const newDebugMode = !window.miraApp.debugMode;
-            window.miraApp.setDebugMode(newDebugMode);
-            window.miraApp.showMessage(`Debug mode ${newDebugMode ? 'enabled' : 'disabled'}`, 'info');
-        }
-    }
-
-    /** Ctrl+Shift+M - Show detailed debug info (was debug mode toggle, now moved to D) */
-    if (e.ctrlKey && e.shiftKey && e.code === 'KeyM') {
-        e.preventDefault();
-        if (window.miraApp) {
-            window.miraApp.showAudioStats();
-        }
-    }
-
-    /** Ctrl+Shift+T - Test backend connection */
-    if (e.ctrlKey && e.shiftKey && e.code === 'KeyT') {
-        e.preventDefault();
-        if (window.miraApp) {
-            window.miraApp.testBackendConnection();
-        }
-    }
-
-    /** Ctrl+Shift+A - Show debug help */
-    if (e.ctrlKey && e.shiftKey && e.code === 'KeyA') {
-        e.preventDefault();
-        if (window.miraApp) {
-            window.miraApp.printDebugHelp();
-            window.miraApp.showMessage('Debug help displayed in console', 'info');
-        }
-    }
-
-    /** Ctrl+Shift+I - Get debug info */
-    if (e.ctrlKey && e.shiftKey && e.code === 'KeyI') {
-        e.preventDefault();
-        if (window.miraApp) {
-            const debugInfo = window.miraApp.getDebugInfo();
-            console.table(debugInfo.system);
-            console.table(debugInfo.connection);
-            console.table(debugInfo.audio);
-            console.table(debugInfo.ui);
-            console.table(debugInfo.browser);
-            window.miraApp.showMessage('Debug info displayed in console', 'info');
         }
     }
 });

@@ -21,6 +21,8 @@ export const API_CONFIG = {
         BACKEND_STOP_REQUEST: 10000,
         /** Health check interval in milliseconds */
         HEALTH_CHECK_INTERVAL: 1000,
+        /** Interaction request timeout in milliseconds */
+        INTERACTION_REQUEST: 30000,
     },
     RETRY_CONFIG: {
         MAX_RETRIES: 2,
@@ -144,14 +146,25 @@ export const DEBUG_CONFIG = {
  * @type {Object}
  */
 export const API_ENDPOINTS = {
-    HEALTH_CHECK: '/',
-    CLIENT_REGISTER: '/service/client/register',
-    CLIENT_DEREGISTER: '/service/client/deregister',
-    SERVICE_ENABLE: '/service/enable',
-    SERVICE_DISABLE: '/service/disable',
-    INTERACTIONS_REGISTER: '/interactions/register',
-    INTERACTIONS: '/interactions',
-    PERSONS: '/person',
+    STATUS: '/',
+    REGISTER_CLIENT: '/service/client/register/{client_id}',
+    DEREGISTER_CLIENT: '/service/client/deregister/{client_id}',
+    ENABLE_SERVICE: '/service/enable',
+    DISABLE_SERVICE: '/service/disable',
+    REGISTER_INTERACTION: '/interactions/register',
+    RUN_INFERENCE: '/interactions/{interaction_id}/inference',
+    TRIGGER_INFERENCE: '/interactions/{id}/trigger_inference',
+    INTERACTION_INFERENCE: '/interactions/{interaction_id}/inference',
+    GET_INTERACTION: '/interactions/{interaction_id}',
+    DELETE_INTERACTION: '/interactions/{interaction_id}',
+    GET_PERSON: '/persons/{person_id}',
+    GET_ALL_PERSONS: '/persons/all',
+    UPDATE_PERSON: '/persons/{person_id}/update',
+    // Speaker endpoints (aliases for persons for backward compatibility)
+    GET_SPEAKERS: '/persons/all',
+    TRAIN_SPEAKER_EMBEDDING: '/persons/{speaker_id}/train_embedding',
+    // Conversation endpoints
+    GET_CONVERSATION: '/conversations/{conversation_id}',
 };
 
 /**

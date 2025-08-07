@@ -5,7 +5,7 @@
 
 import { ApiService } from '../api.js';
 import { Interaction, Conversation } from '../models.js';
-import { AUDIO_CONFIG, ERROR_MESSAGES } from '../constants.js';
+import { AUDIO_CONFIG, ERROR_MESSAGES, API_ENDPOINTS } from '../constants.js';
 
 // Mock fetch for all integration tests
 global.fetch = jest.fn();
@@ -261,7 +261,7 @@ describe('Desktop Client Integration Tests', () => {
             expect(interaction).not.toBeNull();
             expect(interaction.id).toBe('interaction-123');
             expect(fetch).toHaveBeenCalledWith(
-                expect.stringContaining('/interactions/register'),
+                expect.stringContaining(API_ENDPOINTS.REGISTER_INTERACTION),
                 expect.objectContaining({
                     method: 'POST'
                 })
@@ -283,7 +283,7 @@ describe('Desktop Client Integration Tests', () => {
 
             expect(stopped).toBe(true);
             expect(fetch).toHaveBeenCalledWith(
-                expect.stringContaining('/service/disable'),
+                expect.stringContaining(API_ENDPOINTS.DISABLE_SERVICE),
                 expect.objectContaining({
                     method: 'PATCH'
                 })
