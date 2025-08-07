@@ -364,65 +364,6 @@ class MiraDesktop {
         }
     }
 
-    /**
-     * Check connection to available servers
-     * Wrapper method that delegates to API service
-     */
-    async checkConnection() {
-        return this.apiService.checkConnection();
-    }
-
-    /**
-     * Register client with backend service
-     * Uses ApiService for proper error handling and response parsing
-     */
-    async registerClient() {
-        try {
-            const success = await this.apiService.registerClient();
-
-            if (success) {
-                this.log('info', SUCCESS_MESSAGES.REGISTRATION);
-                this.debugLog('api', 'Client registration successful', { clientId: API_CONFIG.CLIENT_ID });
-            }
-
-            else {
-                this.log('error', 'Failed to register client');
-            }
-        }
-
-        catch (error) {
-            this.log('error', `Client registration error: ${error.message}`);
-        }
-    }
-
-    /**
-     * Deregister client from backend service
-     * Uses ApiService for proper cleanup and error handling
-     */
-    async deregisterClient() {
-        if (this.isDeregistering) {
-            return;
-        }
-
-        this.isDeregistering = true;
-        try {
-            const success = await this.apiService.deregisterClient();
-
-            if (success) {
-                this.log('info', 'Client deregistered successfully');
-                this.debugLog('api', 'Client deregistration successful', { clientId: API_CONFIG.CLIENT_ID });
-            }
-
-            else {
-                this.log('error', 'Failed to deregister client');
-            }
-        }
-
-        catch (error) {
-            this.log('error', `Client deregistration error: ${error.message}`);
-        }
-    }
-
     async toggleListening() {
         if (!this.apiService.isConnected) {
             this.showMessage('Please wait for connection to the backend server');
@@ -1143,7 +1084,7 @@ class MiraDesktop {
                     });
 
                     // Trigger inference pipeline in background
-                    this.apiService.triggerInferencePipeline(interactionData.id).catch(error => {
+                    this.apiService.runInference(interactionData.id).catch(error => {
                         this.debugLog('api', 'Failed to trigger inference pipeline', {
                             interactionId: interactionData.id,
                             error: error.message
@@ -1168,7 +1109,7 @@ class MiraDesktop {
                 this.showMessage('Network error. Please check your connection to the backend.', 'error');
             } else if (error.message.includes('Backend connection lost')) {
                 this.showMessage('Connection to backend lost. Reconnecting...');
-                this.checkConnection();
+                this.apiService.checkConnection();
             }
 
             else {
@@ -1401,8 +1342,8 @@ class MiraDesktop {
      * Uses ApiService for proper error handling
      */
     async clearInteractions() {
-        if (!this.apiService) {
-            this.log('error', 'Cannot clear interactions: API service not initialized');
+        if (!this.apiService.isConnected) {
+            this.log('error', 'Cannot clear interactions: not connected to backend');
             return;
         }
 
@@ -1930,14 +1871,7 @@ class MiraDesktop {
         this.recordBtn.style.background = '#10b981';
         this.recordBtn.disabled = true;
 
-        this.showMessage('Speaker training completed successfully!', 'info');
-
-        // Re-enable Mira service
-        try {
-            await this.apiService.enableService();
-        } catch (error) {
-            this.debugLog('training', 'Failed to re-enable service after training', { error: error.message });
-        }
+        this.showMessage('Speaker training completed successfully!', 'info');``
 
         setTimeout(() => {
             this.hideTrainingDialog();
@@ -2007,7 +1941,7 @@ class MiraDesktop {
             /** Stop listening service and deregister from backend */
             if (this.apiService.isRegistered) {
                 try {
-                    await this.deregisterClient();
+                    await this.apiService.deregisterClient();
 
                     if (this.isListening) {
                         await this.apiService.disableService();

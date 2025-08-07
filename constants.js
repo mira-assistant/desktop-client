@@ -153,7 +153,7 @@ export const API_ENDPOINTS = {
     DISABLE_SERVICE: '/service/disable',
     REGISTER_INTERACTION: '/interactions/register',
     RUN_INFERENCE: '/interactions/{interaction_id}/inference',
-    TRIGGER_INFERENCE: '/interactions/{interaction_id}/trigger_inference',
+    INTERACTION_INFERENCE: '/interactions/{interaction_id}/inference',
     GET_INTERACTION: '/interactions/{interaction_id}',
     DELETE_INTERACTION: '/interactions/{interaction_id}',
     GET_PERSON: '/persons/{person_id}',

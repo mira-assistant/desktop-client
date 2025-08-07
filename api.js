@@ -72,6 +72,8 @@ export class ApiService extends EventTarget {
                     const wasConnected = this.isConnected;
                     this.isConnected = true;
 
+                    this.isRegistered = !!(healthData.connected_clients[this.clientId]);
+
                     if (!this.isRegistered) {
                         await this.registerClient();
                     }
@@ -100,17 +102,15 @@ export class ApiService extends EventTarget {
                     connected = true;
                     break;
                 } else {
-                    this.baseUrl = tempBaseUrl;
+                    this.isRegistered = false;
                 }
             } catch {
-                /** Continue to next URL */
             }
         }
 
         if (!connected && this.isConnected) {
             this.isConnected = false;
-            this.isRegistered = false;
-            this.serviceEnabled = null; // Reset service status when disconnected
+            this.serviceEnabled = null;
             this.dispatchEvent(new CustomEvent('connectionChange', {
                 detail: { connected: false }
             }));
@@ -316,9 +316,9 @@ export class ApiService extends EventTarget {
         });
 
         if (response.success) {
-            this.isRegistered = true;
             return true;
         }
+
         return false;
     }
 
@@ -330,7 +330,6 @@ export class ApiService extends EventTarget {
         const endpoint = `${API_ENDPOINTS.DEREGISTER_CLIENT.replace('{client_id}', encodeURIComponent(this.clientId))}`;
         const response = await this.makeRequest(endpoint, { method: 'DELETE' });
         if (response.success) {
-            this.isRegistered = false;
             return true;
         }
         return false;
@@ -427,8 +426,8 @@ export class ApiService extends EventTarget {
      * @param {string} interactionId - Interaction UUID
      * @returns {Promise<boolean>} True if inference triggered successfully
      */
-    async triggerInferencePipeline(interactionId) {
-        const endpoint = API_ENDPOINTS.TRIGGER_INFERENCE.replace('{interaction_id}', interactionId);
+    async runInference(interactionId) {
+        const endpoint = API_ENDPOINTS.INTERACTION_INFERENCE.replace('{interaction_id}', interactionId);
         const response = await this.makeRequest(endpoint, {
             method: 'POST',
             body: JSON.stringify({ client_id: this.clientId })
@@ -575,7 +574,6 @@ export class ApiService extends EventTarget {
     destroy() {
         this.stopHealthChecking();
         this.isConnected = false;
-        this.isRegistered = false;
         this.recentInteractionIds.clear();
     }
 }

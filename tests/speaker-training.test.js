@@ -13,11 +13,11 @@ describe('Speaker Training API', () => {
 
     beforeEach(() => {
         fetch.mockClear();
-        
+
         // Create ApiService and immediately stop health checking
         apiService = new ApiService();
         apiService.stopHealthChecking();
-        
+
         // Mock the constructor behavior without health checking
         apiService.baseUrl = 'http://localhost:8000';
         apiService.isConnected = true;
@@ -52,7 +52,7 @@ describe('Speaker Training API', () => {
             expect(speakers[1].id).toBe('2');
             expect(speakers[1].name).toBe('Jane Smith');
             expect(speakers[1].index).toBe(2);
-            
+
             // Check that speakers endpoint was called
             expect(fetch).toHaveBeenCalledWith(
                 expect.stringContaining(API_ENDPOINTS.GET_SPEAKERS),
@@ -98,7 +98,7 @@ describe('Speaker Training API', () => {
             const result = await apiService.trainSpeakerEmbedding(speakerId, audioData, expectedText);
 
             expect(result).toBe(true);
-            
+
             // Check that training endpoint was called
             expect(fetch).toHaveBeenCalledWith(
                 expect.stringContaining(API_ENDPOINTS.TRAIN_SPEAKER_EMBEDDING.replace('{speaker_id}', 'test-speaker-id')),
@@ -141,10 +141,10 @@ describe('Speaker Training API', () => {
             const result = await apiService.triggerInferencePipeline(interactionId);
 
             expect(result).toBe(true);
-            
+
             // Check that inference endpoint was called
             expect(fetch).toHaveBeenCalledWith(
-                expect.stringContaining(API_ENDPOINTS.TRIGGER_INFERENCE.replace('{interaction_id}', 'test-interaction-id')),
+                expect.stringContaining(API_ENDPOINTS.INTERACTION_INFERENCE.replace('{interaction_id}', 'test-interaction-id')),
                 expect.objectContaining({
                     method: 'POST',
                     body: JSON.stringify({ client_id: 'test-client' })
@@ -253,7 +253,7 @@ describe('Message Handling', () => {
                 textContent: '',
                 addEventListener: jest.fn()
             };
-            
+
             mockContainer = {
                 appendChild: jest.fn()
             };
@@ -274,7 +274,7 @@ describe('Message Handling', () => {
                 showMessage: function(message, type = 'info') {
                     const toast = global.document.createElement('div');
                     toast.className = `toast toast-${type}`;
-                    
+
                     let backgroundColor;
                     switch (type) {
                         case 'error':
@@ -291,10 +291,10 @@ describe('Message Handling', () => {
                             backgroundColor = '#00aa44';
                             break;
                     }
-                    
+
                     toast.style.cssText = `background: ${backgroundColor}; color: white;`;
                     toast.textContent = message;
-                    
+
                     this.notificationContainer.appendChild(toast);
                     this.activeNotifications.push(toast);
                 }
