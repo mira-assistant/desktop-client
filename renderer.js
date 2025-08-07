@@ -10,28 +10,22 @@ class MiraDesktop {
      * Initialize the MiraDesktop application
      */
     constructor() {
-        /** Initialize API service that manages its own connection */
         this.apiService = new ApiService();
 
-        /** Local state (not available via API service) */
         this.isListening = false;
         this.isToggling = false;
         this.isProcessingAudio = false;
         this.isDeregistering = false;
         this.isTogglingAudioCapture = false;
 
-        /** Interaction data */
         this.interactions = [];
 
-        /** Person management */
         this.personIndexMap = new Map();
         this.nextPersonIndex = 0;
 
-        /** Notification management */
         this.activeNotifications = [];
         this.notificationContainer = null;
 
-        /** Audio capture properties for VAD-based recording */
         this.micVAD = null;
         this.isRecording = false;
         this.audioProcessingStats = {
@@ -42,32 +36,22 @@ class MiraDesktop {
             averageAudioDuration: 0
         };
 
-        /** Shared VAD system for both recording and training */
         this.sharedVAD = null;
-        this.vadMode = null; // 'recording' or 'training'
-        this.vadPreloaded = false;
-        this.vadPreloadPromise = null;
+        this.vadMode = null;
 
-        /** Set up API service event listeners */
         this.initializeElements();
         this.setupEventListeners();
         this.setupApiEventListeners();
 
-        /** Initialize connection banner state - start as disconnected */
         this.showConnectionBanner();
 
-        /** Initialize notification container */
         this.initializeNotificationContainer();
-
-        /** Preload VAD library for faster startup */
-        this.preloadVAD();
     }
 
     /**
      * Set up event listeners for API service events
      */
     setupApiEventListeners() {
-        /** Listen for connection changes, complete disconnection, or new host */
         this.apiService.addEventListener('connectionChange', (event) => {
             const { connected, hostName, url } = event.detail;
 
@@ -75,7 +59,6 @@ class MiraDesktop {
                 this.updateConnectionStatus(true);
                 this.hideConnectionBanner();
 
-                /** Log successful connection */
                 this.log('info', `Connected to ${hostName} at ${url}`);
             }
 
@@ -83,25 +66,20 @@ class MiraDesktop {
                 this.updateConnectionStatus(false);
                 this.showConnectionBanner();
 
-                /** If training is in progress, end it due to server disconnection */
                 if (this.isTraining) {
                     this.endTrainingDueToDisconnection();
                 }
 
-                /** Connection lost - let statusChange handle listening state through health checks */
             }
         });
 
-        /** Listen for service status changes */
         this.apiService.addEventListener('statusChange', (event) => {
             const { enabled } = event.detail;
             this.updateServerStatus({ enabled });
 
-            /** Manage listening state based on service status */
             this.manageListeningState(enabled);
         });
 
-        /** Listen for interaction updates */
         this.apiService.addEventListener('interactionsUpdated', (event) => {
             const { interactionIds } = event.detail;
             this.fetchLatestInteractions(interactionIds);
@@ -123,7 +101,6 @@ class MiraDesktop {
         this.toolTip = document.getElementById('custom-tooltip');
         this.statusIndicator = document.getElementById('statusIndicator');
 
-        // Speaker training elements
         this.trainingGlyph = document.getElementById('trainingGlyph');
         this.trainingOverlay = document.getElementById('trainingOverlay');
         this.trainingCloseBtn = document.getElementById('trainingCloseBtn');
@@ -145,7 +122,6 @@ class MiraDesktop {
         this.progressFill = document.getElementById('progressFill');
         this.promptText = document.getElementById('promptText');
 
-        // Training state
         this.isTraining = false;
         this.currentTrainingStep = 0;
         this.selectedSpeaker = null;
@@ -169,7 +145,6 @@ class MiraDesktop {
     async manageListeningState(enabled) {
         try {
             if (enabled && !this.isListening) {
-                /** Enable listening: start audio capture and interaction */
                 await this.startAudioCapture();
                 this.isListening = true;
                 this.updateListeningUI(true);
@@ -179,7 +154,6 @@ class MiraDesktop {
                     vadInitialized: !!this.micVAD
                 });
             } else if (!enabled && this.isListening) {
-                /** Disable listening: stop audio capture and cleanup */
                 await this.stopAudioCapture();
                 this.isListening = false;
                 this.updateListeningUI(false);
@@ -193,7 +167,6 @@ class MiraDesktop {
 
         catch (error) {
             this.log('error', 'Error in manageListeningState', error);
-            /** Ensure cleanup on error */
             if (!enabled) {
                 await this.stopAudioCapture();
                 this.isListening = false;
@@ -208,7 +181,6 @@ class MiraDesktop {
         this.clearButton.addEventListener('click', () => this.clearInteractions());
         this.retryButton.addEventListener('click', () => this.handleRetryConnection());
 
-        // Speaker training event listeners
         this.trainingGlyph.addEventListener('click', () => this.showTrainingDialog());
         this.trainingCloseBtn.addEventListener('click', () => this.hideTrainingDialog());
         this.cancelTrainingBtn.addEventListener('click', () => this.hideTrainingDialog());
@@ -283,7 +255,6 @@ class MiraDesktop {
      */
     async handleClientNameChange(newClientName) {
         if (!newClientName || newClientName.trim() === '') {
-            /** Reset to current client ID if empty */
             this.clientNameInput.value = this.apiService.clientId;
             return;
         }
@@ -296,19 +267,16 @@ class MiraDesktop {
                 connected: this.apiService.isConnected
             });
 
-            /** Show success message and make text appear gray/placeholder-like */
             this.showMessage(`Client name updated to: ${this.apiService.clientId}`, 'info');
             this.clientNameInput.style.color = '#999';
             this.clientNameInput.value = this.apiService.clientId;
 
-            /** Reset text color after a short delay */
             setTimeout(() => {
                 this.clientNameInput.style.color = '';
             }, 2000);
         }
 
         else {
-            /** Revert input on failure */
             this.clientNameInput.value = this.apiService.clientId;
             this.log('warn', 'Failed to update client name - reverted to previous name');
             this.showMessage('Failed to update client name', 'error');
@@ -379,7 +347,6 @@ class MiraDesktop {
             return;
         }
 
-        // Wait until audio capture is not toggling (ready)
         async function waitTilAudioCaptureReady(ctx) {
             while (ctx.isTogglingAudioCapture) {
                 console.log('Waiting for audio capture to be ready...');
@@ -394,14 +361,12 @@ class MiraDesktop {
         this.isToggling = true;
 
         try {
-            /** Provide immediate UI feedback */
             this.micButton.disabled = true;
             this.micButton.style.opacity = UI_CONFIG.OPACITY.DISABLED;
             this.micStatusText.textContent = this.isListening ? 'Stopping...' : 'Starting...';
             this.isTogglingAudioCapture = true;
 
             if (this.isListening) {
-                /** Send disable request to backend - state management will handle cleanup */
                 const success = await this.apiService.disableService();
 
                 if (!success) {
@@ -410,7 +375,6 @@ class MiraDesktop {
             }
 
             else {
-                /** Send enable request to backend - state management will handle audio start */
                 const success = await this.apiService.enableService();
 
                 if (!success) {
@@ -425,7 +389,6 @@ class MiraDesktop {
         catch (error) {
             this.log('error', 'Error toggling listening', error);
 
-            /** Determine user-friendly error message */
             let errorMessage = 'Error: ' + error.message;
             if (error.message.includes('Permission denied') || error.message.includes('NotAllowedError')) {
                 errorMessage = ERROR_MESSAGES.AUDIO.PERMISSION_DENIED;
@@ -441,10 +404,8 @@ class MiraDesktop {
 
             this.showMessage(errorMessage, 'error');
 
-            /** Ensure UI reflects actual state after error */
             this.updateListeningUI(this.isListening);
 
-            /** Log detailed error information for debugging */
             console.error('Toggle listening error details:', {
                 message: error.message,
                 isConnected: this.apiService.isConnected,
@@ -461,39 +422,7 @@ class MiraDesktop {
         }
     }
 
-    /**
-     * Preload VAD library for faster startup
-     */
-    async preloadVAD() {
-        if (this.vadPreloadPromise) {
-            return this.vadPreloadPromise;
-        }
 
-        this.vadPreloadPromise = this.initializeVADLibrary();
-        return this.vadPreloadPromise;
-    }
-
-    /**
-     * Initialize VAD library and keep it ready
-     */
-    async initializeVADLibrary() {
-        try {
-            this.log('info', 'Preloading VAD library...');
-            
-            await this.waitForVADLibrary();
-
-            if (typeof vad === 'undefined' || !vad.MicVAD) {
-                throw new Error('Voice Activity Detection library is not available');
-            }
-
-            this.vadPreloaded = true;
-            this.log('info', 'VAD library preloaded successfully');
-            
-        } catch (error) {
-            this.log('error', 'Failed to preload VAD library', error);
-            this.vadPreloaded = false;
-        }
-    }
 
     /**
      * Unified method to start audio with VAD for both recording and training
@@ -508,13 +437,10 @@ class MiraDesktop {
         try {
             this.log('info', `Starting audio in ${mode} mode`);
             
-            // Ensure VAD is preloaded
-            if (!this.vadPreloaded) {
-                await this.preloadVAD();
-            }
+            await this.waitForVADLibrary();
 
-            if (!this.vadPreloaded) {
-                throw new Error('VAD library failed to preload');
+            if (typeof vad === 'undefined' || !vad.MicVAD) {
+                throw new Error('Voice Activity Detection library is not available');
             }
 
             const { MicVAD } = vad;
@@ -592,7 +518,7 @@ class MiraDesktop {
             await this.sharedVAD.start();
 
             if (mode === 'recording') {
-                this.micVAD = this.sharedVAD; // Keep reference for backward compatibility
+                this.micVAD = this.sharedVAD;
                 this.isRecording = true;
                 this.updateVADStatus('waiting');
             }
@@ -634,7 +560,6 @@ class MiraDesktop {
 
         } catch (error) {
             this.log('error', 'Error stopping shared VAD', error);
-            // Force cleanup
             this.sharedVAD = null;
             this.vadMode = null;
             this.micVAD = null;
@@ -719,7 +644,6 @@ class MiraDesktop {
         } catch (error) {
             this.log('error', 'Error stopping VAD audio capture', error);
 
-            /** Force cleanup even if there are errors */
             try {
                 await this.forceStopAllAudioTracks();
                 this.micVAD = null;
@@ -740,7 +664,6 @@ class MiraDesktop {
                 sharedVAD: !!this.sharedVAD
             });
 
-            /** Don't rethrow the error - we want to ensure cleanup happens */
         } finally {
             this.isTogglingAudioCapture = false;
         }
@@ -751,32 +674,26 @@ class MiraDesktop {
      */
     async forceStopAllAudioTracks() {
         try {
-            /** Get all media devices */
             const mediaDevices = navigator.mediaDevices;
             if (!mediaDevices || !mediaDevices.enumerateDevices) {
                 return;
             }
 
-            /** Check if there are any active media streams and verify cleanup */
 
-            /** Try to detect active streams by checking permissions */
             try {
                 await navigator.permissions.query({ name: 'microphone' });
             }
 
-            catch {
-                /** Ignore permission check errors - this is just a verification step */
+            catch (error) {
+                console.debug('Error during stream verification', error);
             }
 
-            /** The VAD library should clean up its own streams, but let's add a verification step */
-            /** We'll try to create a new temporary stream to verify microphone access is properly released */
             await this.verifyMicrophoneIsReleased();
 
         }
 
         catch (error) {
             console.error('Error during audio track cleanup:', error);
-            /** Continue execution - this is a best-effort cleanup */
         }
     }
 
@@ -785,7 +702,6 @@ class MiraDesktop {
      */
     async verifyMicrophoneIsReleased() {
         try {
-            /** Try to get microphone access briefly to verify it's not locked */
             const testStream = await navigator.mediaDevices.getUserMedia({
                 audio: {
                     sampleRate: 16000,
@@ -793,7 +709,6 @@ class MiraDesktop {
                 }
             });
 
-            /** Immediately stop the test stream */
             if (testStream) {
                 testStream.getTracks().forEach(track => {
                     track.stop();
@@ -804,11 +719,10 @@ class MiraDesktop {
 
         catch (error) {
             if (error.name === 'NotAllowedError') {
-                /** Expected if user has denied access */
+                console.debug('Microphone access was denied');
             } else if (error.name === 'NotFoundError') {
-                /** No microphone found */
+                console.debug('No microphone found');
             } else if (error.name === 'AbortError' || error.message.includes('busy')) {
-                /** This suggests the microphone wasn't properly released */
                 throw new Error('Microphone appears to still be in use after VAD destruction');
             }
         }
@@ -818,7 +732,6 @@ class MiraDesktop {
      * Verify that recording has actually stopped
      */
     async verifyRecordingIsStopped() {
-        // TODO: Need to implement
 
         if (this.isRecording) {
             console.log('Recording state verification - isRecording:', this.isRecording, 'micVAD:', !!this.micVAD);
@@ -888,29 +801,23 @@ class MiraDesktop {
      */
     async processAndSendOptimizedAudio(audioFloat32Array) {
         try {
-            /** Step 1: Analyze audio quality */
             const audioAnalysis = this.analyzeAudioQuality(audioFloat32Array);
 
-            /** Step 2: Apply noise reduction if enabled */
             let processedAudio = audioFloat32Array;
             if (AUDIO_CONFIG.OPTIMIZATION.ENABLE_ADVANCED_NOISE_REDUCTION) {
                 processedAudio = this.applyNoiseReduction(processedAudio, audioAnalysis);
             }
 
-            /** Step 3: Apply dynamic gain control */
             if (AUDIO_CONFIG.OPTIMIZATION.ENABLE_DYNAMIC_GAIN_CONTROL) {
                 processedAudio = this.applyDynamicGainControl(processedAudio, audioAnalysis);
             }
 
-            /** Step 4: Apply spectral gating for further noise reduction */
             if (AUDIO_CONFIG.OPTIMIZATION.ENABLE_SPECTRAL_GATING) {
                 processedAudio = this.applySpectralGating(processedAudio, audioAnalysis);
             }
 
-            /** Step 5: Final quality check */
             const finalAnalysis = this.analyzeAudioQuality(processedAudio);
 
-            /** Step 6: Only send if audio quality is sufficient */
             if (finalAnalysis.snr > AUDIO_CONFIG.OPTIMIZATION.SIGNAL_THRESHOLD) {
                 await this.sendVADAudioToBackend(processedAudio);
             }
@@ -923,7 +830,6 @@ class MiraDesktop {
 
         catch (error) {
             console.error('Error in audio optimization pipeline:', error);
-            /** Fallback to original audio if processing fails */
             await this.sendVADAudioToBackend(audioFloat32Array);
         }
     }
@@ -937,13 +843,11 @@ class MiraDesktop {
         let maxAmplitude = 0;
         let silentSamples = 0;
 
-        /** Calculate RMS and find peak amplitude */
         for (let i = 0; i < samples; i++) {
             const sample = Math.abs(audioFloat32Array[i]);
             sumSquares += sample * sample;
             maxAmplitude = Math.max(maxAmplitude, sample);
 
-            /** Threshold for "silent" samples */
             if (sample < 0.001) {
                 silentSamples++;
             }
@@ -952,14 +856,11 @@ class MiraDesktop {
         const rms = Math.sqrt(sumSquares / samples);
         const energy = sumSquares / samples;
 
-        /** Estimate SNR (simplified calculation) */
         const speechPower = rms * rms;
-        /** Estimate noise floor */
         const noisePower = silentSamples > samples * 0.1 ?
             Math.max(speechPower * 0.01, 1e-10) : speechPower * 0.1;
         const snr = 10 * Math.log10(speechPower / noisePower);
 
-        /** Calculate dynamic range */
         const dynamicRange = 20 * Math.log10(maxAmplitude / Math.max(rms, 1e-10));
 
         return {
@@ -981,22 +882,18 @@ class MiraDesktop {
         }
 
         const result = new Float32Array(audioFloat32Array.length);
-        /** Adaptive noise threshold */
         const noiseThreshold = analysis.rms * 0.3;
 
-        /** Simple spectral subtraction approach */
         for (let i = 0; i < audioFloat32Array.length; i++) {
             const sample = audioFloat32Array[i];
             const sampleAbs = Math.abs(sample);
 
             if (sampleAbs > noiseThreshold) {
-                /** Keep strong signals, apply gentle filtering to weak ones */
                 const gain = Math.min(1.0, sampleAbs / noiseThreshold);
                 result[i] = sample * gain;
             }
 
             else {
-                /** Aggressive reduction for likely noise */
                 result[i] = sample * 0.1;
             }
         }
@@ -1012,7 +909,6 @@ class MiraDesktop {
             return audioFloat32Array;
         }
 
-        /** Calculate target RMS level - optimal level for interaction */
         const targetRMS = 0.15;
         const gainFactor = Math.min(3.0, targetRMS / Math.max(analysis.rms, 0.001));
 
@@ -1032,19 +928,16 @@ class MiraDesktop {
         const windowSize = Math.min(512, Math.floor(audioFloat32Array.length / 8));
         const gateThreshold = analysis.rms * 0.2;
 
-        /** Apply gating in overlapping windows */
         for (let i = 0; i < audioFloat32Array.length; i++) {
             const windowStart = Math.max(0, i - windowSize / 2);
             const windowEnd = Math.min(audioFloat32Array.length, i + windowSize / 2);
 
-            /** Calculate local RMS */
             let localRMS = 0;
             for (let j = windowStart; j < windowEnd; j++) {
                 localRMS += audioFloat32Array[j] * audioFloat32Array[j];
             }
             localRMS = Math.sqrt(localRMS / (windowEnd - windowStart));
 
-            /** Apply gate */
             const gateGain = localRMS > gateThreshold ? 1.0 : 0.3;
             result[i] = audioFloat32Array[i] * gateGain;
         }
@@ -1071,16 +964,13 @@ class MiraDesktop {
                 throw new Error('Invalid audio data format');
             }
 
-            /** Convert Float32Array to 16-bit PCM for backend compatibility */
             const audioInt16 = new Int16Array(audioFloat32Array.length);
             let validSamples = 0;
 
             for (let i = 0; i < audioFloat32Array.length; i++) {
-                /** Clamp and convert to 16-bit signed integer */
                 const sample = Math.max(-1, Math.min(1, audioFloat32Array[i]));
                 audioInt16[i] = Math.round(sample * 32767);
 
-                /** Count non-zero samples to validate audio content */
                 if (Math.abs(sample) > 0.001) {
                     validSamples++;
                 }
@@ -1091,24 +981,18 @@ class MiraDesktop {
                 this.log('warn', `Audio appears to be mostly silence, validSamples: ${validSamples} of ${audioFloat32Array.length}`);
             }
 
-            /** Convert to bytes for backend (little-endian) */
             const audioBytes = new Uint8Array(audioInt16.buffer);
 
-            /** Validate connection before sending */
             if (!this.apiService.isConnected || !this.apiService) {
                 throw new Error(ERROR_MESSAGES.BACKEND.SERVICE_UNAVAILABLE);
             }
 
-            /** Use ApiService to register interaction */
             const interactionData = await this.apiService.registerInteraction(audioBytes.buffer, 'wav');
 
             if (interactionData) {
-                // Handle different response types
                 if (interactionData.type === 'message') {
-                    // Display agent message without updating UI stats
                     this.showMessage(interactionData.message, interactionData.level);
                 } else if (interactionData.id) {
-                    // Handle interaction object - update stats and trigger inference
                     this.audioProcessingStats.successfulRequests++;
                     this.audioProcessingStats.totalAudioSent++;
                     this.audioProcessingStats.totalAudioBytes += audioBytes.length;
@@ -1122,7 +1006,6 @@ class MiraDesktop {
                         interactionData: interactionData
                     });
 
-                    // Trigger inference pipeline in background
                     this.apiService.runInference(interactionData.id).catch(error => {
                         this.debugLog('api', 'Failed to trigger inference pipeline', {
                             interactionId: interactionData.id,
@@ -1131,8 +1014,6 @@ class MiraDesktop {
                     });
                 }
             } else {
-                // Handle null response (e.g., when disabling Mira via voice)
-                // Suppress UI updates as requested
                 this.audioProcessingStats.failedRequests++;
                 this.debugLog('audio', 'Interaction returned null - likely voice disable command');
             }
@@ -1175,7 +1056,6 @@ class MiraDesktop {
 
         if (this.isListening && this.micStatusText) {
             const message = statusMessages[status] || 'Unknown status';
-            /** Only update specific statuses, maintain the main listening message for most cases */
             if (status === 'stopping') {
                 this.micStatusText.textContent = message;
             } else if (status === 'stopped') {
@@ -1215,8 +1095,6 @@ class MiraDesktop {
      * @param {Object} status - Status object with enabled property
      */
     async updateServerStatus(status) {
-        /** The manageListeningState function now handles actual listening state changes */
-        /** This function just updates the UI display if needed */
         this.log('info', `Server status updated: ${status.enabled ? 'enabled' : 'disabled'}`);
     }
 
@@ -1318,7 +1196,6 @@ class MiraDesktop {
 
         else {
             this.log('error', `Failed to fetch person ${interaction.speaker_id}`);
-            /** Create a fallback person object */
             personData = { name: 'Unknown Person', id: interaction.speaker_id };
         }
 
@@ -1333,7 +1210,6 @@ class MiraDesktop {
         const interactionElement = this.createInteractionElement(interaction);
         this.interactionContent.appendChild(interactionElement);
 
-        /** Scroll to bottom */
         this.interactionContent.scrollTop = this.interactionContent.scrollHeight;
     }
 
@@ -1475,7 +1351,6 @@ class MiraDesktop {
             gap: 8px;
         `;
 
-        /** Add CSS for smooth repositioning of notifications */
         const style = document.createElement('style');
         style.textContent = `
             #notificationContainer > * {
@@ -1489,11 +1364,9 @@ class MiraDesktop {
     showMessage(message, type = 'info') {
         console.log('Message:', message);
 
-        /** Create a simple toast notification for user feedback */
         const toast = document.createElement('div');
         toast.className = `toast toast-${type}`;
 
-        // Define colors for different message types
         let backgroundColor;
         let textColor = 'white';
 
@@ -1505,7 +1378,7 @@ class MiraDesktop {
                 backgroundColor = '#ffaa00';
                 break;
             case 'agent':
-                backgroundColor = '#6366f1'; // Indigo color for agent messages
+                backgroundColor = '#6366f1';
                 break;
             case 'info':
             default:
@@ -1533,17 +1406,14 @@ class MiraDesktop {
 
         toast.textContent = message;
 
-        /** Add to notification container instead of body */
         this.notificationContainer.appendChild(toast);
         this.activeNotifications.push(toast);
 
-        /** Animate in */
         setTimeout(() => {
             toast.style.opacity = '1';
             toast.style.transform = 'translateX(0)';
         }, 10);
 
-        /** Auto-remove non-error notifications */
         if (type !== 'error') {
             const duration = Math.max(3000, Math.min(8000, message.length * 50));
             setTimeout(() => {
@@ -1551,7 +1421,6 @@ class MiraDesktop {
             }, duration);
         }
 
-        /** Click to dismiss */
         toast.addEventListener('click', () => {
             this.removeNotification(toast);
         });
@@ -1571,7 +1440,6 @@ class MiraDesktop {
             if (toast.parentNode) {
                 toast.parentNode.removeChild(toast);
 
-                /** Remove from active notifications array */
                 const index = this.activeNotifications.indexOf(toast);
                 if (index > -1) {
                     this.activeNotifications.splice(index, 1);
@@ -1590,11 +1458,9 @@ class MiraDesktop {
         }
 
         try {
-            // Load persons from backend
             const persons = await this.apiService.getPersons();
             this.populateSpeakerDropdown(persons);
 
-            // Show overlay with smooth transition
             this.trainingOverlay.style.display = 'flex';
             requestAnimationFrame(() => {
                 this.trainingOverlay.classList.add('show');
@@ -1639,19 +1505,15 @@ class MiraDesktop {
             const selectedOption = this.speakerSelect.selectedOptions[0];
             const speakerName = selectedOption.textContent;
 
-            // Check if speaker has a name (not just "Person X")
             const hasRealName = speakerName && !speakerName.startsWith('Person ');
             this.requiresNameInput = !hasRealName;
             this.currentSpeakerName = hasRealName ? speakerName : '';
 
-            // Show floating speaker name
             this.speakerNameDisplay.textContent = this.currentSpeakerName || 'Unnamed Speaker';
             this.floatingSpeakerName.style.display = 'flex';
 
-            // Show edit button if name is required or for editing existing names
             this.editNameBtn.style.display = 'block';
 
-            // Enable start button only if name is provided or not required
             this.startTrainingBtn.disabled = this.requiresNameInput && !this.currentSpeakerName;
         } else {
             this.selectedSpeaker = null;
@@ -1668,7 +1530,6 @@ class MiraDesktop {
     showNameEditModal() {
         this.nameEditInput.value = this.currentSpeakerName;
         this.nameEditModal.style.display = 'flex';
-        // Focus input after a short delay to ensure modal is rendered
         setTimeout(() => {
             this.nameEditInput.focus();
             this.nameEditInput.select();
@@ -1708,12 +1569,9 @@ class MiraDesktop {
 
         this.showMessage('Training ended due to server disconnection', 'error');
 
-        // Clean up training state
         await this.resetTrainingRecording();
         this.hideTrainingDialog();
 
-        // Try to re-enable Mira service when connection is restored
-        // This will be handled by the connection restoration logic
     }
     async startTrainingProcess() {
         if (!this.selectedSpeaker) {
@@ -1732,24 +1590,20 @@ class MiraDesktop {
             this.currentTrainingStep = 0;
             this.trainingRecordings = [];
 
-            // Disable Mira service during training
             if (this.isListening) {
                 await this.apiService.disableService();
             }
 
-            // Show training progress and hide selection UI
             this.trainingProgress.style.display = 'block';
             document.querySelector('.speaker-selection').style.display = 'none';
             document.querySelector('.training-controls').style.display = 'none';
 
-            // Center the training box by moving it left
             const trainingBox = document.querySelector('.training-box');
             trainingBox.style.transform = 'translateX(-60px)';
 
-            // Show the prompt with slide-out animation from underneath
             setTimeout(() => {
                 this.trainingPrompt.classList.add('visible');
-            }, 200); // Small delay for smoother transition
+            }, 200);
 
             this.showCurrentPrompt();
         } catch (error) {
@@ -1826,7 +1680,6 @@ class MiraDesktop {
             this.recordBtn.disabled = true;
             this.recordBtn.classList.remove('recording');
 
-            // Wait a moment for audio to be captured
             setTimeout(() => {
                 this.processTrainingRecording();
             }, 500);
@@ -1848,7 +1701,6 @@ class MiraDesktop {
                 return;
             }
 
-            // Convert Float32Array to format expected by backend
             const audioInt16 = new Int16Array(this.currentTrainingAudio.length);
             for (let i = 0; i < this.currentTrainingAudio.length; i++) {
                 const sample = Math.max(-1, Math.min(1, this.currentTrainingAudio[i]));
@@ -1874,12 +1726,10 @@ class MiraDesktop {
                 this.currentTrainingStep++;
 
                 if (this.currentTrainingStep < this.trainingPrompts.length) {
-                    // Move to next step
                     setTimeout(() => {
                         this.showCurrentPrompt();
                     }, 1000);
                 } else {
-                    // Training complete
                     this.completeTraining();
                 }
             } else {
@@ -1937,40 +1787,32 @@ class MiraDesktop {
 
         this.resetTrainingRecording();
 
-        // Reset UI
         this.trainingProgress.style.display = 'none';
         this.floatingSpeakerName.style.display = 'none';
         this.nameEditModal.style.display = 'none';
         document.querySelector('.speaker-selection').style.display = 'block';
         document.querySelector('.training-controls').style.display = 'flex';
 
-        // Reset training animations
-        // this.trainingPrompt.style.display = 'none';
         this.trainingPrompt.classList.remove('visible');
 
-        // Reset training box position
         const trainingBox = document.querySelector('.training-box');
         trainingBox.style.transform = '';
 
         this.speakerSelect.value = '';
         this.startTrainingBtn.disabled = true;
-        // this.recordBtn.style.background = '#3b82f6';
     }
 
     async cleanup() {
         try {
-            /** Stop shared VAD system first */
             if (this.sharedVAD) {
                 await this.stopAudio();
             }
 
-            /** Clear interaction interval */
             if (this.interactionInterval) {
                 clearInterval(this.interactionInterval);
                 this.interactionInterval = null;
             }
 
-            /** Stop listening service and deregister from backend */
             if (this.apiService.isRegistered) {
                 try {
                     await this.apiService.deregisterClient();
@@ -1985,12 +1827,10 @@ class MiraDesktop {
                 }
             }
 
-            /** Clean up API service */
             if (this.apiService) {
                 this.apiService.destroy();
             }
 
-            /** Final state reset */
             this.isRecording = false;
             this.isListening = false;
             this.isToggling = false;

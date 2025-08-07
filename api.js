@@ -14,14 +14,13 @@ export class ApiService extends EventTarget {
     constructor() {
         super();
         this.baseUrl = null;
-        this.clientId = 'desktop-client'; // Default client ID
+        this.clientId = 'desktop-client';
         this.isConnected = false;
         this.isRegistered = false;
         this.recentInteractionIds = new Set();
         this.healthCheckInterval = null;
-        this.serviceEnabled = null; // Track service enabled state
+        this.serviceEnabled = null;
 
-        /** Start automatic health checking */
         this.startHealthChecking();
     }
 
@@ -77,12 +76,10 @@ export class ApiService extends EventTarget {
                         await this.registerClient();
                     }
 
-                    /** Check for new interactions and emit event if changed */
                     if (healthData.recent_interactions) {
                         this.updateRecentInteractions(healthData.recent_interactions);
                     }
 
-                    /** Check for service status changes and emit event if changed */
                     const currentServiceEnabled = healthData.enabled !== undefined ? healthData.enabled : true;
                     if (this.serviceEnabled !== null && this.serviceEnabled !== currentServiceEnabled) {
                         this.dispatchEvent(new CustomEvent('statusChange', {
@@ -91,7 +88,6 @@ export class ApiService extends EventTarget {
                     }
                     this.serviceEnabled = currentServiceEnabled;
 
-                    /** Emit connection change event if status changed */
                     if (!wasConnected) {
                         this.dispatchEvent(new CustomEvent('connectionChange', {
                             detail: { connected: true, hostName, url }
@@ -103,8 +99,8 @@ export class ApiService extends EventTarget {
                 } else {
                     this.isRegistered = false;
                 }
-            } catch {
-                // Connection failed to this host, try next
+            } catch (error) {
+                console.debug('Health check failed', error);
             }
         }
 
@@ -151,7 +147,6 @@ export class ApiService extends EventTarget {
         try {
             const url = `${this.baseUrl}${endpoint}`;
 
-            /** Log attempted URL if in debug mode */
             if (typeof window !== 'undefined' && window.miraApp && window.miraApp.debugMode) {
                 console.log(`[API DEBUG] Attempting request to: ${url}`, {
                     method: options.method || 'GET',
@@ -215,27 +210,22 @@ export class ApiService extends EventTarget {
         }
 
         const oldClientId = this.clientId;
-        /** Sanitize client ID: convert special characters to dashes and trim */
         const sanitizedClientId = newClientId.trim()
-            .replace(/[^a-zA-Z0-9\-_]/g, '-')  // Replace special chars with dashes
-            .replace(/-+/g, '-')                // Replace multiple dashes with single dash
-            .replace(/^-|-$/g, '');             // Remove leading/trailing dashes
+            .replace(/[^a-zA-Z0-9\-_]/g, '-')
+            .replace(/-+/g, '-')
+            .replace(/^-|-$/g, '');
 
-        /** No change needed */
         if (sanitizedClientId === oldClientId) {
             return true;
         }
 
         try {
-            /** If currently registered, deregister old client first */
             if (this.isRegistered && this.isConnected) {
                 await this.deregisterClient();
             }
 
-            /** Update to new client ID */
             this.clientId = sanitizedClientId;
 
-            /** If connected, register with new client ID */
             if (this.isConnected) {
                 const registered = await this.registerClient();
                 if (registered) {
@@ -245,14 +235,12 @@ export class ApiService extends EventTarget {
                     return true;
                 }
             } else {
-                /** Not connected, just update the ID */
                 this.dispatchEvent(new CustomEvent('clientIdChanged', {
                     detail: { oldClientId, newClientId: sanitizedClientId }
                 }));
                 return true;
             }
         } catch (error) {
-            /** Revert on failure */
             this.clientId = oldClientId;
             console.warn('Failed to update client ID:', error.message);
             return false;
@@ -269,14 +257,12 @@ export class ApiService extends EventTarget {
         const fallback = { local: '127.0.0.1', external: '127.0.0.1' };
 
         if (typeof require !== 'undefined') {
-            // Node.js environment (Electron main/preload)
             try {
                 const os = require('os');
                 const networkInterfaces = os.networkInterfaces();
 
                 let externalIp = '127.0.0.1';
 
-                // Look for non-internal IPv4 interfaces
                 for (const interfaceName in networkInterfaces) {
                     const interfaces = networkInterfaces[interfaceName];
                     for (const iface of interfaces) {
@@ -295,7 +281,6 @@ export class ApiService extends EventTarget {
             }
         }
 
-        // Browser environment fallback
         return fallback;
     }
 
@@ -365,7 +350,6 @@ export class ApiService extends EventTarget {
             }
 
             if (attempt < maxRetries) {
-                /** Exponential backoff delay */
                 const delay = API_CONFIG.RETRY_CONFIG.BACKOFF_DELAY * Math.pow(2, attempt - 1);
                 await new Promise(resolve => setTimeout(resolve, delay));
             }
@@ -400,9 +384,7 @@ export class ApiService extends EventTarget {
             return null;
         }
 
-        // Handle different response types
         if (response.data) {
-            // Check if response contains a message dictionary (for agent responses)
             if (response.data.message && typeof response.data.message === 'string') {
                 return {
                     type: 'message',
@@ -411,13 +393,11 @@ export class ApiService extends EventTarget {
                 };
             }
 
-            // Check if response is an interaction object
             if (response.data.id && response.data.text) {
                 return Interaction.fromApiResponse(response.data);
             }
         }
 
-        // For voice disable scenarios or empty responses
         return null;
     }
 
