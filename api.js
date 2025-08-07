@@ -62,7 +62,6 @@ export class ApiService extends EventTarget {
 
         for (const [hostName, url] of Object.entries(urls)) {
             try {
-                const tempBaseUrl = this.baseUrl;
                 this.baseUrl = url;
 
                 const healthData = await this.healthCheck();
@@ -105,6 +104,7 @@ export class ApiService extends EventTarget {
                     this.isRegistered = false;
                 }
             } catch {
+                // Connection failed to this host, try next
             }
         }
 
@@ -422,20 +422,6 @@ export class ApiService extends EventTarget {
     }
 
     /**
-     * Trigger inference pipeline for an interaction
-     * @param {string} interactionId - Interaction UUID
-     * @returns {Promise<boolean>} True if inference triggered successfully
-     */
-    async runInference(interactionId) {
-        const endpoint = API_ENDPOINTS.INTERACTION_INFERENCE.replace('{interaction_id}', interactionId);
-        const response = await this.makeRequest(endpoint, {
-            method: 'POST',
-            body: JSON.stringify({ client_id: this.clientId })
-        });
-        return response.success;
-    }
-
-    /**
      * Get interaction by ID
      * @param {string} interactionId - Interaction UUID
      * @returns {Promise<Interaction|null>} Interaction object or null if not found
@@ -566,6 +552,34 @@ export class ApiService extends EventTarget {
         const response = await this.makeRequest(endpoint, { method: 'GET' });
 
         return response.success && response.data ? Conversation.fromApiResponse(response.data) : null;
+    }
+
+    /**
+     * Trigger inference pipeline for an interaction
+     * @param {string} interactionId - Interaction UUID
+     * @returns {Promise<boolean>} True if inference triggered successfully
+     */
+    async triggerInferencePipeline(interactionId) {
+        const endpoint = API_ENDPOINTS.INTERACTION_INFERENCE.replace('{interaction_id}', interactionId);
+        const response = await this.makeRequest(
+            endpoint,
+            { 
+                method: 'POST',
+                body: JSON.stringify({ client_id: this.clientId })
+            },
+            API_CONFIG.TIMEOUTS.INTERACTION_REQUEST
+        );
+
+        return response.success;
+    }
+
+    /**
+     * Run inference pipeline (alias for triggerInferencePipeline)
+     * @param {string} interactionId - Interaction UUID
+     * @returns {Promise<boolean>} True if inference triggered successfully
+     */
+    async runInference(interactionId) {
+        return this.triggerInferencePipeline(interactionId);
     }
 
     /**

@@ -42,6 +42,12 @@ class MiraDesktop {
             averageAudioDuration: 0
         };
 
+        /** Shared VAD system for both recording and training */
+        this.sharedVAD = null;
+        this.vadMode = null; // 'recording' or 'training'
+        this.vadPreloaded = false;
+        this.vadPreloadPromise = null;
+
         /** Set up API service event listeners */
         this.initializeElements();
         this.setupEventListeners();
@@ -52,6 +58,9 @@ class MiraDesktop {
 
         /** Initialize notification container */
         this.initializeNotificationContainer();
+
+        /** Preload VAD library for faster startup */
+        this.preloadVAD();
     }
 
     /**
@@ -149,7 +158,7 @@ class MiraDesktop {
             "Mira, remind me to call mom tomorrow."
         ];
         this.trainingRecordings = [];
-        this.trainingMicVAD = null;
+        this.currentTrainingAudio = null;
     }
 
     /**
@@ -453,6 +462,187 @@ class MiraDesktop {
     }
 
     /**
+     * Preload VAD library for faster startup
+     */
+    async preloadVAD() {
+        if (this.vadPreloadPromise) {
+            return this.vadPreloadPromise;
+        }
+
+        this.vadPreloadPromise = this.initializeVADLibrary();
+        return this.vadPreloadPromise;
+    }
+
+    /**
+     * Initialize VAD library and keep it ready
+     */
+    async initializeVADLibrary() {
+        try {
+            this.log('info', 'Preloading VAD library...');
+            
+            await this.waitForVADLibrary();
+
+            if (typeof vad === 'undefined' || !vad.MicVAD) {
+                throw new Error('Voice Activity Detection library is not available');
+            }
+
+            this.vadPreloaded = true;
+            this.log('info', 'VAD library preloaded successfully');
+            
+        } catch (error) {
+            this.log('error', 'Failed to preload VAD library', error);
+            this.vadPreloaded = false;
+        }
+    }
+
+    /**
+     * Unified method to start audio with VAD for both recording and training
+     * @param {string} mode - 'recording' or 'training'
+     * @param {Object} callbacks - Callback functions for audio events
+     */
+    async startAudio(mode, callbacks = {}) {
+        if (this.sharedVAD) {
+            throw new Error('Audio system is already active');
+        }
+
+        try {
+            this.log('info', `Starting audio in ${mode} mode`);
+            
+            // Ensure VAD is preloaded
+            if (!this.vadPreloaded) {
+                await this.preloadVAD();
+            }
+
+            if (!this.vadPreloaded) {
+                throw new Error('VAD library failed to preload');
+            }
+
+            const { MicVAD } = vad;
+            const sampleRate = AUDIO_CONFIG.VAD_SETTINGS.SAMPLE_RATE;
+            const frameSamples = AUDIO_CONFIG.VAD_SETTINGS.FRAME_SAMPLES;
+            const targetSilenceMs = AUDIO_CONFIG.VAD_SETTINGS.TARGET_SILENCE_MS;
+            const redemptionFrames = Math.max(1, Math.round((targetSilenceMs * sampleRate) / (frameSamples * 1000)));
+
+            this.vadMode = mode;
+
+            const vadConfig = {
+                model: 'legacy',
+                positiveSpeechThreshold: mode === 'training' ? 0.3 : AUDIO_CONFIG.VAD_THRESHOLDS.POSITIVE_SPEECH,
+                negativeSpeechThreshold: mode === 'training' ? 0.1 : AUDIO_CONFIG.VAD_THRESHOLDS.NEGATIVE_SPEECH,
+                redemptionFrames: redemptionFrames,
+                frameSamples: frameSamples,
+                preSpeechPadFrames: AUDIO_CONFIG.VAD_SETTINGS.PRE_SPEECH_PAD_FRAMES,
+                minSpeechFrames: AUDIO_CONFIG.VAD_SETTINGS.MIN_SPEECH_FRAMES,
+
+                additionalAudioConstraints: {
+                    sampleRate: AUDIO_CONFIG.CONSTRAINTS.SAMPLE_RATE,
+                    echoCancellation: AUDIO_CONFIG.CONSTRAINTS.ECHO_CANCELLATION,
+                    noiseSuppression: AUDIO_CONFIG.CONSTRAINTS.NOISE_SUPPRESSION,
+                    autoGainControl: AUDIO_CONFIG.CONSTRAINTS.AUTO_GAIN_CONTROL,
+                    channelCount: AUDIO_CONFIG.CONSTRAINTS.CHANNELS,
+                    googEchoCancellation: AUDIO_CONFIG.CONSTRAINTS.GOOGLE_ECHO_CANCELLATION,
+                    googAutoGainControl: AUDIO_CONFIG.CONSTRAINTS.GOOGLE_AUTO_GAIN_CONTROL,
+                    googNoiseSuppression: AUDIO_CONFIG.CONSTRAINTS.GOOGLE_NOISE_SUPPRESSION,
+                    googHighpassFilter: AUDIO_CONFIG.CONSTRAINTS.GOOGLE_HIGHPASS_FILTER,
+                    googAudioMirroring: AUDIO_CONFIG.CONSTRAINTS.GOOGLE_AUDIO_MIRRORING,
+                    latency: AUDIO_CONFIG.CONSTRAINTS.LATENCY,
+                },
+
+                onSpeechStart: callbacks.onSpeechStart || (() => {
+                    if (mode === 'recording') {
+                        this.updateVADStatus('speaking');
+                    }
+                }),
+
+                onSpeechEnd: callbacks.onSpeechEnd || ((audio) => {
+                    if (mode === 'recording') {
+                        this.updateVADStatus('processing');
+                        if (audio && audio.length > 0) {
+                            this.processAndSendOptimizedAudio(audio);
+                        } else {
+                            this.updateVADStatus('waiting');
+                        }
+                    }
+                }),
+
+                onVADMisfire: callbacks.onVADMisfire || (() => {
+                    if (mode === 'recording') {
+                        this.updateVADStatus('waiting');
+                    }
+                }),
+
+                onFrameProcessed: callbacks.onFrameProcessed || ((probabilities) => {
+                    if (DEBUG_CONFIG.DEBUG_MODE && mode === 'recording') {
+                        this.debugLog('vad', 'Frame processed', {
+                            probabilities: probabilities,
+                            isRecording: this.isRecording,
+                            vadStatus: this.micStatusText?.textContent,
+                            mode: this.vadMode
+                        });
+                    }
+                }),
+
+                onError: callbacks.onError || ((error) => {
+                    this.log('error', `VAD internal error in ${mode} mode`, error);
+                    this.showMessage(`Voice detection error: ${error.message}`, 'error');
+                })
+            };
+
+            this.sharedVAD = await MicVAD.new(vadConfig);
+            await this.sharedVAD.start();
+
+            if (mode === 'recording') {
+                this.micVAD = this.sharedVAD; // Keep reference for backward compatibility
+                this.isRecording = true;
+                this.updateVADStatus('waiting');
+            }
+
+            this.log('info', `Audio started successfully in ${mode} mode`);
+            return this.sharedVAD;
+
+        } catch (error) {
+            this.log('error', `Error starting audio in ${mode} mode`, error);
+            this.vadMode = null;
+            this.sharedVAD = null;
+            throw error;
+        }
+    }
+
+    /**
+     * Stop the shared VAD system
+     */
+    async stopAudio() {
+        if (!this.sharedVAD) {
+            return;
+        }
+
+        try {
+            this.log('info', `Stopping audio in ${this.vadMode} mode`);
+            
+            await this.sharedVAD.destroy();
+            
+            if (this.vadMode === 'recording') {
+                this.micVAD = null;
+                this.isRecording = false;
+                this.updateVADStatus('stopped');
+            }
+
+            this.sharedVAD = null;
+            this.vadMode = null;
+
+            this.log('info', 'Audio stopped successfully');
+
+        } catch (error) {
+            this.log('error', 'Error stopping shared VAD', error);
+            // Force cleanup
+            this.sharedVAD = null;
+            this.vadMode = null;
+            this.micVAD = null;
+            this.isRecording = false;
+        }
+    }
+
+    /**
      * Wait for VAD library to load with timeout
      * @param {number} timeout - Timeout in milliseconds
      */
@@ -477,124 +667,11 @@ class MiraDesktop {
     async startAudioCapture() {
         try {
             this.log('info', 'Starting audio capture process');
-
             this.isTogglingAudioCapture = true;
-            await this.waitForVADLibrary();
 
-            if (typeof vad === 'undefined') {
-                console.error('VAD library not found. Library loading may have failed.');
-                const errorMsg = window.vadLibraryLoadError || 'Voice Activity Detection library is not available. Please refresh the page and try again.';
-                throw new Error(errorMsg);
-            }
+            await this.startAudio('recording');
 
-            if (!vad.MicVAD) {
-                console.error('MicVAD not found in VAD library object:', Object.keys(vad));
-                throw new Error('Voice Activity Detection module is incomplete. Please refresh the page and try again.');
-            }
-
-            const { MicVAD } = vad;
-            const sampleRate = AUDIO_CONFIG.VAD_SETTINGS.SAMPLE_RATE;
-            const frameSamples = AUDIO_CONFIG.VAD_SETTINGS.FRAME_SAMPLES;
-            const targetSilenceMs = AUDIO_CONFIG.VAD_SETTINGS.TARGET_SILENCE_MS;
-            const redemptionFrames = Math.max(1, Math.round((targetSilenceMs * sampleRate) / (frameSamples * 1000)));
-
-            const vadInitPromise = MicVAD.new({
-                model: 'legacy',
-
-                /** Optimized thresholds for better noise rejection */
-                positiveSpeechThreshold: AUDIO_CONFIG.VAD_THRESHOLDS.POSITIVE_SPEECH,
-                negativeSpeechThreshold: AUDIO_CONFIG.VAD_THRESHOLDS.NEGATIVE_SPEECH,
-
-                redemptionFrames: redemptionFrames,
-
-                /** Audio quality settings optimized for interaction */
-                frameSamples: frameSamples,
-                preSpeechPadFrames: AUDIO_CONFIG.VAD_SETTINGS.PRE_SPEECH_PAD_FRAMES,
-                minSpeechFrames: AUDIO_CONFIG.VAD_SETTINGS.MIN_SPEECH_FRAMES,
-
-                /** Enhanced audio constraints for maximum quality */
-                additionalAudioConstraints: {
-                    sampleRate: AUDIO_CONFIG.CONSTRAINTS.SAMPLE_RATE,
-                    echoCancellation: AUDIO_CONFIG.CONSTRAINTS.ECHO_CANCELLATION,
-                    noiseSuppression: AUDIO_CONFIG.CONSTRAINTS.NOISE_SUPPRESSION,
-                    autoGainControl: AUDIO_CONFIG.CONSTRAINTS.AUTO_GAIN_CONTROL,
-                    channelCount: AUDIO_CONFIG.CONSTRAINTS.CHANNELS,
-
-                    /** Advanced constraints for better audio quality */
-                    googEchoCancellation: AUDIO_CONFIG.CONSTRAINTS.GOOGLE_ECHO_CANCELLATION,
-                    googAutoGainControl: AUDIO_CONFIG.CONSTRAINTS.GOOGLE_AUTO_GAIN_CONTROL,
-                    googNoiseSuppression: AUDIO_CONFIG.CONSTRAINTS.GOOGLE_NOISE_SUPPRESSION,
-                    googHighpassFilter: AUDIO_CONFIG.CONSTRAINTS.GOOGLE_HIGHPASS_FILTER,
-                    googAudioMirroring: AUDIO_CONFIG.CONSTRAINTS.GOOGLE_AUDIO_MIRRORING,
-                    latency: AUDIO_CONFIG.CONSTRAINTS.LATENCY,
-                },
-
-                onSpeechStart: () => {
-                    this.updateVADStatus('speaking');
-                },
-
-                onSpeechEnd: (audio) => {
-                    try {
-                        this.updateVADStatus('processing');
-
-                        /** Validate and optimize audio data before sending */
-                        if (audio && audio.length > 0) {
-                            this.processAndSendOptimizedAudio(audio);
-                        }
-
-                        else {
-                            this.updateVADStatus('waiting');
-                        }
-                    }
-
-                    catch (err) {
-                        this.log('error', 'VAD error in onSpeechEnd callback', err);
-                        this.updateVADStatus('waiting');
-                    }
-                },
-
-                onVADMisfire: () => {
-                    this.updateVADStatus('waiting');
-                },
-
-                onFrameProcessed: (probabilities) => {
-                    /** Enhanced debug mode logging for frame processing */
-                    if (DEBUG_CONFIG.DEBUG_MODE) {
-                        this.debugLog('vad', 'Frame processed', {
-                            probabilities: probabilities,
-                            isRecording: this.isRecording,
-                            vadStatus: this.micStatusText?.textContent,
-                            audioOptimization: {
-                                enableAdvancedNoiseReduction: AUDIO_CONFIG.OPTIMIZATION.ENABLE_ADVANCED_NOISE_REDUCTION,
-                                enableDynamicGainControl: AUDIO_CONFIG.OPTIMIZATION.ENABLE_DYNAMIC_GAIN_CONTROL,
-                                enableSpectralGating: AUDIO_CONFIG.OPTIMIZATION.ENABLE_SPECTRAL_GATING,
-                                noiseFloor: AUDIO_CONFIG.OPTIMIZATION.NOISE_FLOOR,
-                                signalThreshold: AUDIO_CONFIG.OPTIMIZATION.SIGNAL_THRESHOLD,
-                                adaptiveThresholds: AUDIO_CONFIG.OPTIMIZATION.ENABLE_ADAPTIVE_THRESHOLDS,
-                                environmentalNoise: AUDIO_CONFIG.OPTIMIZATION.ENVIRONMENTAL_NOISE,
-                                lastNoiseAnalysis: AUDIO_CONFIG.OPTIMIZATION.LAST_NOISE_ANALYSIS
-                            }
-                        });
-                    }
-                },
-
-                onError: (error) => {
-                    this.log('error', 'VAD internal error', error);
-                    this.showMessage('Voice detection error: ' + error.message, 'error');
-                }
-            });
-
-            const timeoutPromise = new Promise((_, reject) => {
-                setTimeout(() => reject(new Error('VAD initialization timeout after 10 seconds')), 10000);
-            });
-
-            this.micVAD = await Promise.race([vadInitPromise, timeoutPromise]);
-            await this.micVAD.start();
-            this.isRecording = true;
-            this.updateVADStatus('waiting');
-        }
-
-        catch (error) {
+        } catch (error) {
             this.log('error', 'Error starting VAD audio capture', error);
 
             let errorMessage = ERROR_MESSAGES.AUDIO.VAD_INIT_FAILED;
@@ -608,9 +685,7 @@ class MiraDesktop {
                 errorMessage = ERROR_MESSAGES.AUDIO.DEVICE_NOT_FOUND;
             } else if (error.message.includes('MicVAD')) {
                 errorMessage = 'Voice detection module is incomplete. Please refresh the page and try again.';
-            }
-
-            else {
+            } else {
                 errorMessage = `Voice detection error: ${error.message}`;
             }
 
@@ -623,9 +698,7 @@ class MiraDesktop {
 
             this.showMessage(errorMessage, 'error');
             throw error;
-        }
-
-        finally {
+        } finally {
             this.isTogglingAudioCapture = false;
         }
     }
@@ -635,46 +708,15 @@ class MiraDesktop {
      * Enhanced error handling and debugging for stop recording functionality
      */
     async stopAudioCapture() {
-
         try {
             this.log('info', 'Stopping audio capture process');
-            /** Set recording state to false immediately to prevent new processing */
-            this.isRecording = false;
             this.isTogglingAudioCapture = true;
 
-            if (this.micVAD) {
-                this.debugLog('audio', 'VAD destruction initiated', {
-                    vadExists: !!this.micVAD,
-                    isRecording: this.isRecording
-                });
+            await this.stopAudio();
 
-                try {
-                    /** Call destroy method on VAD */
-                    await this.micVAD.destroy();
-                }
-
-                catch (vadError) {
-                    this.log('error', 'Error calling VAD.destroy()', vadError);
-                    /** Continue with cleanup even if destroy fails */
-                }
-
-                /** Additional cleanup: manually stop any remaining audio tracks */
-                await this.forceStopAllAudioTracks();
-
-                /** Clear the VAD reference */
-                this.micVAD = null;
-            }
-
-            /** Verify that recording has actually stopped */
-            await this.verifyRecordingIsStopped();
-
-            /** Update VAD status */
-            this.updateVADStatus('stopped');
             this.log('info', 'Audio capture stopped successfully');
 
-        }
-
-        catch (error) {
+        } catch (error) {
             this.log('error', 'Error stopping VAD audio capture', error);
 
             /** Force cleanup even if there are errors */
@@ -682,27 +724,24 @@ class MiraDesktop {
                 await this.forceStopAllAudioTracks();
                 this.micVAD = null;
                 this.isRecording = false;
+                this.sharedVAD = null;
+                this.vadMode = null;
                 this.updateVADStatus('stopped');
                 this.log('info', 'Forced cleanup completed');
-            }
-
-            catch (forceError) {
+            } catch (forceError) {
                 this.log('error', 'Error during forced cleanup', forceError);
             }
 
-            /** Log detailed error information for debugging */
             this.debugLog('audio', 'Audio capture stop error details', {
                 message: error.message,
                 name: error.name,
                 stack: error.stack,
                 isRecording: this.isRecording,
-                micVAD: !!this.micVAD
+                sharedVAD: !!this.sharedVAD
             });
 
             /** Don't rethrow the error - we want to ensure cleanup happens */
-        }
-
-        finally {
+        } finally {
             this.isTogglingAudioCapture = false;
         }
     }
@@ -1739,7 +1778,7 @@ class MiraDesktop {
      * Handle training recording
      */
     async handleTrainingRecord() {
-        if (!this.trainingMicVAD) {
+        if (this.vadMode !== 'training') {
             await this.startTrainingRecording();
         } else {
             await this.stopTrainingRecording();
@@ -1747,26 +1786,15 @@ class MiraDesktop {
     }
 
     /**
-     * Start training recording using VAD
+     * Start training recording using shared VAD
      */
     async startTrainingRecording() {
         try {
-            await this.waitForVADLibrary();
+            this.currentTrainingAudio = null;
 
-            if (typeof vad === 'undefined' || !vad.MicVAD) {
-                throw new Error('Voice Activity Detection library is not available');
-            }
-
-            const { MicVAD } = vad;
-            let recordedAudio = null;
-
-            this.trainingMicVAD = await MicVAD.new({
-                model: 'legacy',
-                positiveSpeechThreshold: 0.3,
-                negativeSpeechThreshold: 0.1,
-
+            await this.startAudio('training', {
                 onSpeechEnd: (audio) => {
-                    recordedAudio = audio;
+                    this.currentTrainingAudio = audio;
                     this.stopTrainingRecording();
                 },
 
@@ -1776,13 +1804,8 @@ class MiraDesktop {
                 }
             });
 
-            await this.trainingMicVAD.start();
-
             this.recordBtn.innerHTML = '<i class="fas fa-stop"></i><span>Recording... Click to Stop</span>';
             this.recordBtn.classList.add('recording');
-
-            // Store the recorded audio callback
-            this.recordedAudioCallback = recordedAudio;
 
         } catch (error) {
             this.showMessage('Failed to start recording: ' + error.message, 'error');
@@ -1794,11 +1817,10 @@ class MiraDesktop {
      * Stop training recording and process audio
      */
     async stopTrainingRecording() {
-        if (!this.trainingMicVAD) return;
+        if (this.vadMode !== 'training') return;
 
         try {
-            await this.trainingMicVAD.destroy();
-            this.trainingMicVAD = null;
+            await this.stopAudio();
 
             this.recordBtn.innerHTML = '<i class="fas fa-check"></i><span>Processing...</span>';
             this.recordBtn.disabled = true;
@@ -1819,16 +1841,26 @@ class MiraDesktop {
      * Process the training recording
      */
     async processTrainingRecording() {
-        // For now, simulate processing and move to next step
-        // In a real implementation, you would get the actual audio data
-        const mockAudioData = new ArrayBuffer(1000); // Placeholder
-
         try {
+            if (!this.currentTrainingAudio || this.currentTrainingAudio.length === 0) {
+                this.showMessage('No audio recorded. Please try again.', 'error');
+                this.resetTrainingRecording();
+                return;
+            }
+
+            // Convert Float32Array to format expected by backend
+            const audioInt16 = new Int16Array(this.currentTrainingAudio.length);
+            for (let i = 0; i < this.currentTrainingAudio.length; i++) {
+                const sample = Math.max(-1, Math.min(1, this.currentTrainingAudio[i]));
+                audioInt16[i] = Math.round(sample * 32767);
+            }
+            const audioData = audioInt16.buffer;
+
             const expectedText = this.trainingPrompts[this.currentTrainingStep];
             const success = await this.apiService.updatePerson(
                 this.selectedSpeaker,
                 this.currentSpeakerName,
-                mockAudioData,
+                audioData,
                 expectedText
             );
 
@@ -1836,7 +1868,7 @@ class MiraDesktop {
                 this.trainingRecordings.push({
                     step: this.currentTrainingStep,
                     text: expectedText,
-                    audio: mockAudioData
+                    audio: audioData
                 });
 
                 this.currentTrainingStep++;
@@ -1882,11 +1914,11 @@ class MiraDesktop {
      * Reset training recording state
      */
     resetTrainingRecording() {
-        if (this.trainingMicVAD) {
-            this.trainingMicVAD.destroy().catch(() => { });
-            this.trainingMicVAD = null;
+        if (this.vadMode === 'training') {
+            this.stopAudio().catch(() => { });
         }
 
+        this.currentTrainingAudio = null;
         this.recordBtn.innerHTML = '<i class="fas fa-microphone"></i><span>Click to Record</span>';
         this.recordBtn.disabled = false;
         this.recordBtn.classList.remove('recording');
@@ -1927,9 +1959,9 @@ class MiraDesktop {
 
     async cleanup() {
         try {
-            /** Stop recording first */
-            if (this.isRecording && this.micVAD) {
-                await this.stopAudioCapture();
+            /** Stop shared VAD system first */
+            if (this.sharedVAD) {
+                await this.stopAudio();
             }
 
             /** Clear interaction interval */
@@ -1963,6 +1995,8 @@ class MiraDesktop {
             this.isListening = false;
             this.isToggling = false;
             this.isProcessingAudio = false;
+            this.vadMode = null;
+            this.sharedVAD = null;
 
         }
 
