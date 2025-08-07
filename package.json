@@ -1,7 +1,7 @@
 {
   "name": "mira-desktop",
   "version": "4.3.0",
-  "description": "Mira Desktop - Cross-platform voice interaction application",
+  "description": "Mira AI Assistant",
   "main": "main.js",
   "type": "commonjs",
   "scripts": {
