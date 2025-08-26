@@ -9,7 +9,8 @@
 export const API_CONFIG = {
     BASE_URLS: new Map([
         ["localhost", 'http://localhost:8000'],
-        ["ankurs-macbook-air", 'http://100.75.140.79:8000']
+        ["ankurs-macbook-air", 'http://100.75.140.79:8000'],
+        ["ankurs-pc", 'http://100.91.146.64:8000']
     ]),
     CLIENT_ID: 'Mira Desktop App',
     TIMEOUTS: {
