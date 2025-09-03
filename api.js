@@ -543,7 +543,7 @@ export class ApiService extends EventTarget {
         const endpoint = API_ENDPOINTS.INTERACTION_INFERENCE.replace('{interaction_id}', interactionId);
         const response = await this.makeRequest(
             endpoint,
-            { 
+            {
                 method: 'POST',
                 body: JSON.stringify({ client_id: this.clientId })
             },
